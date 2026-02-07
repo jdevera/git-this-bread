@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
 	"github.com/jdevera/git-this-bread/internal/analyzer"
 )
 
@@ -315,9 +316,7 @@ func renderRepoVerbose(info analyzer.RepoInfo, opts Options) {
 }
 
 func RenderTable(repos []analyzer.RepoInfo) {
-	// Header
-	fmt.Printf("%-30s %-12s %8s %-12s %s\n", "Repository", "Remote", "Commits", "Last", "Status")
-	fmt.Println(strings.Repeat("-", 80))
+	var rows [][]string
 
 	for _, info := range repos {
 		if !info.IsGitRepo {
@@ -363,13 +362,36 @@ func RenderTable(repos []analyzer.RepoInfo) {
 			status = append(status, Icons["clean"])
 		}
 
-		fmt.Printf("%-30s %-12s %8s %-12s %s\n",
-			truncate(name, 30),
-			truncate(remote, 12),
+		rows = append(rows, []string{
+			name,
+			remote,
 			commits,
 			last,
-			strings.Join(status, " "))
+			strings.Join(status, " "),
+		})
 	}
+
+	headerStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("4")).
+		Padding(0, 1)
+
+	cellStyle := lipgloss.NewStyle().
+		Padding(0, 1)
+
+	t := table.New().
+		Border(lipgloss.RoundedBorder()).
+		BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("8"))).
+		Headers("Repository", "Remote", "Commits", "Last", "Status").
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return headerStyle
+			}
+			return cellStyle
+		}).
+		Rows(rows...)
+
+	fmt.Println(t)
 }
 
 func RenderJSON(repos []analyzer.RepoInfo) {
