@@ -81,11 +81,11 @@ type Options struct {
 }
 
 type DirtyDetails struct {
-	Untracked         int
-	StagedFiles       int
-	StagedInsertions  int
-	StagedDeletions   int
-	UnstagedFiles     int
+	Untracked          int
+	StagedFiles        int
+	StagedInsertions   int
+	StagedDeletions    int
+	UnstagedFiles      int
 	UnstagedInsertions int
 	UnstagedDeletions  int
 }
@@ -122,26 +122,26 @@ type RemoteInfo struct {
 }
 
 type RepoInfo struct {
-	Path                 string
-	Name                 string
-	IsGitRepo            bool
-	HasUserRemote        bool
-	UserRemotes          []string
-	AllRemotes           []RemoteInfo
-	BranchesWithCommits  []BranchInfo
-	TotalUserCommits     int
-	LastCommitDate       string // Last commit by user
-	LastRepoCommitDate   string // Last commit by anyone
+	Path                  string
+	Name                  string
+	IsGitRepo             bool
+	HasUserRemote         bool
+	UserRemotes           []string
+	AllRemotes            []RemoteInfo
+	BranchesWithCommits   []BranchInfo
+	TotalUserCommits      int
+	LastCommitDate        string // Last commit by user
+	LastRepoCommitDate    string // Last commit by anyone
 	HasUncommittedChanges bool
-	DirtyDetails         *DirtyDetails
-	CurrentBranch        string
-	DefaultBranch        string
-	Ahead                int
-	Behind               int
-	StashCount           int
-	IsFork               bool
-	UpstreamURL          string
-	Error                string
+	DirtyDetails          *DirtyDetails
+	CurrentBranch         string
+	DefaultBranch         string
+	Ahead                 int
+	Behind                int
+	StashCount            int
+	IsFork                bool
+	UpstreamURL           string
+	Error                 string
 }
 
 func IsGitRepo(path string) bool {
@@ -264,8 +264,7 @@ func runGit(dir string, args ...string) string {
 }
 
 // parseShortstat parses `git diff --shortstat` output into (insertions, deletions)
-func parseShortstat(output string) (int, int) {
-	insertions, deletions := 0, 0
+func parseShortstat(output string) (insertions, deletions int) {
 	// Format: " 3 files changed, 10 insertions(+), 5 deletions(-)"
 	if m := insertionRe.FindStringSubmatch(output); m != nil {
 		insertions, _ = strconv.Atoi(m[1])
@@ -354,7 +353,7 @@ func countAheadBehind(repo *git.Repository, local, remote plumbing.Hash) (ahead,
 
 	iter, _ := repo.Log(&git.LogOptions{From: local})
 	if iter != nil {
-		iter.ForEach(func(c *object.Commit) error {
+		_ = iter.ForEach(func(c *object.Commit) error {
 			localCommits[c.Hash] = true
 			return nil
 		})
@@ -362,7 +361,7 @@ func countAheadBehind(repo *git.Repository, local, remote plumbing.Hash) (ahead,
 
 	iter, _ = repo.Log(&git.LogOptions{From: remote})
 	if iter != nil {
-		iter.ForEach(func(c *object.Commit) error {
+		_ = iter.ForEach(func(c *object.Commit) error {
 			remoteCommits[c.Hash] = true
 			return nil
 		})
@@ -393,7 +392,7 @@ func walkCommits(repo *git.Repository) (userCount int, lastUserDate, lastRepoDat
 	}
 
 	seen := make(map[plumbing.Hash]bool)
-	iter.ForEach(func(c *object.Commit) error {
+	_ = iter.ForEach(func(c *object.Commit) error {
 		if seen[c.Hash] {
 			return nil
 		}
@@ -422,7 +421,7 @@ func getBranchesWithUserCommits(repo *git.Repository, currentBranch string) []Br
 		return branches
 	}
 
-	refs.ForEach(func(ref *plumbing.Reference) error {
+	_ = refs.ForEach(func(ref *plumbing.Reference) error {
 		if !ref.Name().IsBranch() {
 			return nil
 		}
@@ -435,7 +434,7 @@ func getBranchesWithUserCommits(repo *git.Repository, currentBranch string) []Br
 
 		userCount := 0
 		var lastDate string
-		iter.ForEach(func(c *object.Commit) error {
+		_ = iter.ForEach(func(c *object.Commit) error {
 			if isUserCommit(c) {
 				userCount++
 				if lastDate == "" {

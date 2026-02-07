@@ -5,9 +5,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/spf13/cobra"
+
 	"github.com/jdevera/git-this-bread/internal/analyzer"
 	"github.com/jdevera/git-this-bread/internal/render"
-	"github.com/spf13/cobra"
 )
 
 var (
@@ -79,7 +80,7 @@ func runExplain(cmd *cobra.Command, args []string) error {
 	if analyzer.IsGitRepo(target) {
 		// Single repo mode
 		repoInfo := analyzer.AnalyzeRepo(target, opts)
-		render.RenderRepo(repoInfo, render.Options{
+		render.RenderRepo(&repoInfo, render.Options{
 			Verbose:    verbose,
 			ShowAdvice: showAdvice,
 			UseJSON:    useJSON,
@@ -88,12 +89,14 @@ func runExplain(cmd *cobra.Command, args []string) error {
 		// Multi-repo mode
 		repos := analyzer.AnalyzeDirectory(target, opts, !quiet)
 
-		if useJSON {
+		switch {
+		case useJSON:
 			render.RenderJSON(repos)
-		} else if useTable {
+		case useTable:
 			render.RenderTable(repos)
-		} else {
-			for _, repo := range repos {
+		default:
+			for i := range repos {
+				repo := &repos[i]
 				if showAll || repo.IsGitRepo {
 					render.RenderRepo(repo, render.Options{
 						Verbose:    verbose,

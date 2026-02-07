@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
+
 	"github.com/jdevera/git-this-bread/internal/analyzer"
 )
 
@@ -30,18 +31,17 @@ var Icons = map[string]string{
 
 // Styles
 var (
-	green        = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
-	greenBold    = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true)
-	magenta      = lipgloss.NewStyle().Foreground(lipgloss.Color("5"))
-	magentaBold  = lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Bold(true)
-	blue         = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
-	blueBold     = lipgloss.NewStyle().Foreground(lipgloss.Color("4")).Bold(true)
-	yellow       = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
-	red          = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
-	redBold      = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true)
-	dim          = lipgloss.NewStyle().Faint(true)
-	dimItalic    = lipgloss.NewStyle().Faint(true).Italic(true)
-	whiteBold    = lipgloss.NewStyle().Bold(true)
+	green       = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+	greenBold   = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true)
+	magenta     = lipgloss.NewStyle().Foreground(lipgloss.Color("5"))
+	magentaBold = lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Bold(true)
+	blueBold    = lipgloss.NewStyle().Foreground(lipgloss.Color("4")).Bold(true)
+	yellow      = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+	red         = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+	redBold     = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true)
+	dim         = lipgloss.NewStyle().Faint(true)
+	dimItalic   = lipgloss.NewStyle().Faint(true).Italic(true)
+	whiteBold   = lipgloss.NewStyle().Bold(true)
 )
 
 type Options struct {
@@ -50,7 +50,7 @@ type Options struct {
 	UseJSON    bool
 }
 
-func RenderRepo(info analyzer.RepoInfo, opts Options) {
+func RenderRepo(info *analyzer.RepoInfo, opts Options) {
 	if opts.UseJSON {
 		data, _ := json.MarshalIndent(toMap(info), "", "  ")
 		fmt.Println(string(data))
@@ -65,7 +65,7 @@ func RenderRepo(info analyzer.RepoInfo, opts Options) {
 }
 
 // renderRepoCompact renders a single-line summary of the repo
-func renderRepoCompact(info analyzer.RepoInfo, opts Options) {
+func renderRepoCompact(info *analyzer.RepoInfo, opts Options) {
 	if !info.IsGitRepo {
 		fmt.Printf("%s %s  %s\n",
 			dim.Render(Icons["folder"]),
@@ -86,13 +86,14 @@ func renderRepoCompact(info analyzer.RepoInfo, opts Options) {
 
 	// Determine icon and style
 	var icon, nameStyle string
-	if info.IsFork {
+	switch {
+	case info.IsFork:
 		icon = Icons["fork"]
 		nameStyle = magentaBold.Render(info.Name)
-	} else if hasContributions {
+	case hasContributions:
 		icon = Icons["repo"]
 		nameStyle = greenBold.Render(info.Name)
-	} else {
+	default:
 		icon = Icons["clone"]
 		nameStyle = whiteBold.Render(info.Name)
 	}
@@ -161,7 +162,7 @@ func renderRepoCompact(info analyzer.RepoInfo, opts Options) {
 }
 
 // renderRepoVerbose renders a detailed multi-line view of the repo
-func renderRepoVerbose(info analyzer.RepoInfo, opts Options) {
+func renderRepoVerbose(info *analyzer.RepoInfo, opts Options) {
 	if !info.IsGitRepo {
 		fmt.Printf("%s %s  %s\n",
 			dim.Render(Icons["folder"]),
@@ -182,13 +183,14 @@ func renderRepoVerbose(info analyzer.RepoInfo, opts Options) {
 
 	// Determine icon and style for repo name
 	var icon, nameStyle string
-	if info.IsFork {
+	switch {
+	case info.IsFork:
 		icon = Icons["fork"]
 		nameStyle = magentaBold.Render(info.Name)
-	} else if hasContributions {
+	case hasContributions:
 		icon = Icons["repo"]
 		nameStyle = greenBold.Render(info.Name)
-	} else {
+	default:
 		icon = Icons["clone"]
 		nameStyle = whiteBold.Render(info.Name)
 	}
@@ -318,18 +320,20 @@ func renderRepoVerbose(info analyzer.RepoInfo, opts Options) {
 func RenderTable(repos []analyzer.RepoInfo) {
 	var rows [][]string
 
-	for _, info := range repos {
+	for i := range repos {
+		info := &repos[i]
 		if !info.IsGitRepo {
 			continue
 		}
 
 		name := info.Name
 		hasContributions := info.HasUserRemote || info.TotalUserCommits > 0
-		if info.IsFork {
+		switch {
+		case info.IsFork:
 			name = Icons["fork"] + " " + name
-		} else if hasContributions {
+		case hasContributions:
 			name = Icons["repo"] + " " + name
-		} else {
+		default:
 			name = Icons["clone"] + " " + name
 		}
 
@@ -396,8 +400,8 @@ func RenderTable(repos []analyzer.RepoInfo) {
 
 func RenderJSON(repos []analyzer.RepoInfo) {
 	var data []map[string]interface{}
-	for _, r := range repos {
-		data = append(data, toMap(r))
+	for i := range repos {
+		data = append(data, toMap(&repos[i]))
 	}
 	out, _ := json.MarshalIndent(data, "", "  ")
 	fmt.Println(string(out))
@@ -423,7 +427,7 @@ func PrintLegend() {
 	fmt.Println()
 }
 
-func GetAdvice(info analyzer.RepoInfo) []string {
+func GetAdvice(info *analyzer.RepoInfo) []string {
 	var advice []string
 	hasContributions := info.HasUserRemote || info.TotalUserCommits > 0
 
@@ -460,10 +464,10 @@ func GetAdvice(info analyzer.RepoInfo) []string {
 	return advice
 }
 
-func toMap(info analyzer.RepoInfo) map[string]interface{} {
+func toMap(info *analyzer.RepoInfo) map[string]interface{} {
 	m := map[string]interface{}{
-		"name":       info.Name,
-		"path":       info.Path,
+		"name":        info.Name,
+		"path":        info.Path,
 		"is_git_repo": info.IsGitRepo,
 	}
 	if !info.IsGitRepo {
@@ -503,13 +507,6 @@ func toMap(info analyzer.RepoInfo) map[string]interface{} {
 	m["remotes"] = remotes
 
 	return m
-}
-
-func truncate(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max-3] + "..."
 }
 
 // lipgloss handles NO_COLOR automatically via termenv
