@@ -4,7 +4,6 @@ Items ordered by impact within each section.
 
 ## High Priority
 
-- [ ] Add tests — foundation for CI and refactoring confidence
 - [ ] Add GitHub Action for fmt, lint, build, and test — visible quality gate on every push/PR
 
 ## Medium Priority
@@ -21,4 +20,5 @@ Items ordered by impact within each section.
 
 ## Done
 
+- [x] Add tests — unit tests for pure functions, integration tests with real git repos
 - [x] Add [golangci-lint](https://golangci-lint.run/) config (`.golangci.yml`) — fast Go linters runner with dozens of linters included

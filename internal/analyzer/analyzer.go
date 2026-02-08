@@ -30,6 +30,22 @@ var (
 	configError  error
 )
 
+// SetTestConfig sets test configuration values. Call ResetTestConfig after tests.
+func SetTestConfig(email, github string) {
+	userEmail = email
+	githubUser = github
+	configLoaded = true
+	configError = nil
+}
+
+// ResetTestConfig resets the configuration to unloaded state.
+func ResetTestConfig() {
+	userEmail = ""
+	githubUser = ""
+	configLoaded = false
+	configError = nil
+}
+
 // LoadGitConfig loads required git config values. Returns an error if required values are missing.
 //
 // We use the git command rather than go-git's config API because go-git does not support
