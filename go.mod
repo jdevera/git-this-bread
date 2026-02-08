@@ -1,6 +1,6 @@
 module github.com/jdevera/git-this-bread
 
-go 1.22
+go 1.23
 
 require (
 	github.com/charmbracelet/lipgloss v1.0.0

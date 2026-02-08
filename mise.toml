@@ -1,0 +1,43 @@
+[tools]
+go = "1.23"
+
+[env]
+_.path = ["{{config_root}}/dist"]
+
+[env.XDG_BIN_HOME]
+value = "{{env.HOME}}/.local/bin"
+if = "! env.XDG_BIN_HOME"
+
+[tasks.build]
+description = "Build all tools"
+run = "go build -o dist/ ./cmd/..."
+
+[tasks.install]
+description = "Install all tools to XDG_BIN_HOME"
+depends = ["build"]
+run = """
+mkdir -p "$XDG_BIN_HOME"
+cp dist/* "$XDG_BIN_HOME/"
+echo "Installed to $XDG_BIN_HOME:"
+ls -1 dist/ | sed 's/^/  /'
+"""
+
+[tasks.test]
+description = "Run unit tests"
+run = "go test ./..."
+
+[tasks."test:integration"]
+description = "Run all tests including integration"
+run = "go test -tags=integration ./..."
+
+[tasks.lint]
+description = "Run linter"
+run = "golangci-lint run ./..."
+
+[tasks.fmt]
+description = "Format code"
+run = "go fmt ./..."
+
+[tasks.clean]
+description = "Remove build artifacts"
+run = "rm -rf dist/"

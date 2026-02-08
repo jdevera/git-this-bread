@@ -11,7 +11,6 @@ Items ordered by impact within each section.
 - [ ] Add [goreleaser](https://goreleaser.com/) for cross-platform builds, checksums, changelogs, and GitHub releases — enables actual distribution to users
 - [ ] Add [pre-commit](https://pre-commit.com/) hook for fmt, lint, build, and test — local enforcement before push
 - [ ] [Homebrew tap](https://docs.brew.sh/Taps) for easy `brew install` — requires goreleaser first
-- [ ] Add [mise](https://mise.jdx.dev/) tasks to build and install tools under XDG bin (single tool or all tools) — developer convenience
 
 ## Low Priority
 
@@ -20,5 +19,6 @@ Items ordered by impact within each section.
 
 ## Done
 
+- [x] Add [mise](https://mise.jdx.dev/) tasks for build, install, test, lint, fmt — developer convenience
 - [x] Add tests — unit tests for pure functions, integration tests with real git repos
 - [x] Add [golangci-lint](https://golangci-lint.run/) config (`.golangci.yml`) — fast Go linters runner with dozens of linters included
