@@ -13,6 +13,7 @@ import (
 
 var (
 	verbose    bool
+	compact    bool
 	showAll    bool
 	useTable   bool
 	showLegend bool
@@ -35,13 +36,15 @@ Otherwise, analyze all immediate subdirectories.`,
 }
 
 func init() {
-	rootCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show detailed branch information")
+	rootCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show detailed output (default for single repo)")
+	rootCmd.Flags().BoolVarP(&compact, "compact", "c", false, "Show compact one-line output (default for multi-repo)")
 	rootCmd.Flags().BoolVarP(&showAll, "all", "a", false, "Show all directories, even non-git ones")
 	rootCmd.Flags().BoolVarP(&useTable, "table", "t", false, "Show compact table view")
 	rootCmd.Flags().BoolVarP(&showLegend, "legend", "l", false, "Show legend explaining icons and colors")
 	rootCmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Suppress progress bar")
 	rootCmd.Flags().BoolVar(&showAdvice, "advice", false, "Show actionable advice for each repo")
 	rootCmd.Flags().BoolVar(&useJSON, "json", false, "Output as JSON")
+	rootCmd.MarkFlagsMutuallyExclusive("verbose", "compact")
 }
 
 func runExplain(cmd *cobra.Command, args []string) error {
@@ -73,15 +76,22 @@ func runExplain(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not a directory: %s", target)
 	}
 
+	isSingleRepo := analyzer.IsGitRepo(target)
+
+	// Determine verbose mode:
+	// - Single repo: verbose by default, unless --compact
+	// - Multi-repo: compact by default, unless --verbose
+	useVerbose := verbose || (isSingleRepo && !compact)
+
 	opts := analyzer.Options{
-		Verbose: verbose || useJSON,
+		Verbose: useVerbose || useJSON,
 	}
 
-	if analyzer.IsGitRepo(target) {
+	if isSingleRepo {
 		// Single repo mode
 		repoInfo := analyzer.AnalyzeRepo(target, opts)
 		render.RenderRepo(&repoInfo, render.Options{
-			Verbose:    verbose,
+			Verbose:    useVerbose,
 			ShowAdvice: showAdvice,
 			UseJSON:    useJSON,
 		})
@@ -99,7 +109,7 @@ func runExplain(cmd *cobra.Command, args []string) error {
 				repo := &repos[i]
 				if showAll || repo.IsGitRepo {
 					render.RenderRepo(repo, render.Options{
-						Verbose:    verbose,
+						Verbose:    useVerbose,
 						ShowAdvice: showAdvice,
 					})
 				}
