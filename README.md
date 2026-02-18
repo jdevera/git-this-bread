@@ -10,12 +10,10 @@ A collection of git utilities, freshly baked in Go. Vibe-coded.
 
 ## Tools
 
-| Tool | Description |
-|------|-------------|
-| [git-explain](#-git-explain) | See contribution status across repositories |
-| [git-id](#-git-id) | Manage identity profiles for multi-account workflows |
-| [git-as](#-git-as) | Run git commands with a specific identity |
-| [gh-as](#-gh-as) | Run GitHub CLI with a specific identity |
+| Package | Tools | Description |
+|---------|-------|-------------|
+| **git-explain** | [git-explain](#-git-explain) | See contribution status across repositories |
+| **git-as** | [git-id](#-git-id), [git-as](#-git-as), [gh-as](#-gh-as) | Identity switching for git and GitHub CLI |
 
 ---
 
