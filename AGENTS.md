@@ -23,7 +23,12 @@ GoReleaser builds binaries and Homebrew formulas on tag push:
 git tag v1.0.0 && git push --tags
 ```
 
-Formulas go to `HomebrewFormula/` in this repo.
+Formulas pushed to `jdevera/homebrew-tap`. Install with:
+
+```
+brew install jdevera/tap/git-explain
+brew install jdevera/tap/git-as
+```
 
 ## Test Helpers
 

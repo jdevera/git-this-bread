@@ -81,9 +81,9 @@ brews:
       - git-explain
     repository:
       owner: jdevera
-      name: git-this-bread
+      name: homebrew-tap
       branch: main
-    directory: HomebrewFormula
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     homepage: https://github.com/jdevera/git-this-bread
     description: See your contribution status across git repositories
     license: MIT
@@ -95,9 +95,9 @@ brews:
       - git-as-bundle
     repository:
       owner: jdevera
-      name: git-this-bread
+      name: homebrew-tap
       branch: main
-    directory: HomebrewFormula
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     homepage: https://github.com/jdevera/git-this-bread
     description: Identity switching for git and GitHub CLI
     license: MIT
