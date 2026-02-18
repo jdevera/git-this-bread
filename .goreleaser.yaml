@@ -1,0 +1,107 @@
+version: 2
+
+builds:
+  - id: git-explain
+    main: ./cmd/git-explain
+    binary: git-explain
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+  - id: git-id
+    main: ./cmd/git-id
+    binary: git-id
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+  - id: git-as
+    main: ./cmd/git-as
+    binary: git-as
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+  - id: gh-as
+    main: ./cmd/gh-as
+    binary: gh-as
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - id: git-explain
+    builds:
+      - git-explain
+    name_template: "git-explain_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+
+  - id: git-as-bundle
+    builds:
+      - git-id
+      - git-as
+      - gh-as
+    name_template: "git-as_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+
+checksum:
+  name_template: 'checksums.txt'
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^chore:'
+      - '^test:'
+
+brews:
+  - name: git-explain
+    ids:
+      - git-explain
+    repository:
+      owner: jdevera
+      name: git-this-bread
+      branch: main
+    directory: HomebrewFormula
+    homepage: https://github.com/jdevera/git-this-bread
+    description: See your contribution status across git repositories
+    license: MIT
+    install: |
+      bin.install "git-explain"
+
+  - name: git-as
+    ids:
+      - git-as-bundle
+    repository:
+      owner: jdevera
+      name: git-this-bread
+      branch: main
+    directory: HomebrewFormula
+    homepage: https://github.com/jdevera/git-this-bread
+    description: Identity switching for git and GitHub CLI
+    license: MIT
+    install: |
+      bin.install "git-id"
+      bin.install "git-as"
+      bin.install "gh-as"

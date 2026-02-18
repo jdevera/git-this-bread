@@ -10,10 +10,20 @@ mise run test     # unit tests
 mise run lint     # golangci-lint
 ```
 
-## Tools
+## Packages
 
-- cmd/git-explain — repo status analyzer (see cmd/git-explain/CLAUDE.md)
-- cmd/git-id, cmd/git-as, cmd/gh-as — identity switching (see cmd/git-id/CLAUDE.md)
+- git-explain — repo status analyzer (see cmd/git-explain/AGENTS.md)
+- git-as — identity tools bundle: git-id, git-as, gh-as (see cmd/git-id/AGENTS.md)
+
+## Releases
+
+GoReleaser builds binaries and Homebrew formulas on tag push:
+
+```
+git tag v1.0.0 && git push --tags
+```
+
+Formulas go to `HomebrewFormula/` in this repo.
 
 ## Test Helpers
 
