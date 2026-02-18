@@ -63,6 +63,15 @@ git explain ~/projects --json
 
 # Get advice on what to do
 git explain ~/projects --advice
+
+# Get LLM-powered advice (requires OPENAI_API_KEY or ANTHROPIC_API_KEY)
+git explain ~/projects --llm-advice
+
+# Use Anthropic instead of OpenAI
+git explain ~/projects --llm-advice --llm-provider anthropic
+
+# Add custom personality to LLM advice
+git explain ~/projects --llm-advice --llm-instructions "be encouraging and use baking puns"
 ```
 
 ### Example output
@@ -103,18 +112,145 @@ git explain ~/projects --advice
 | Flag | Short | Description |
 |------|-------|-------------|
 | `--verbose` | `-v` | Detailed multi-line output with branches |
+| `--compact` | `-c` | One-line output (default for multi-repo) |
 | `--table` | `-t` | Compact table view |
 | `--all` | `-a` | Include non-git directories |
 | `--json` | | Output as JSON |
 | `--advice` | | Show actionable suggestions |
+| `--llm-advice` | | Enable LLM-powered advice (requires API key) |
+| `--llm-provider` | | LLM provider: `openai` (default), `anthropic` |
+| `--llm-instructions` | | Custom instructions for the LLM |
+| `--no-cache` | | Bypass LLM advice cache |
+| `--per-repo` | | Analyze each repo individually with LLM |
 | `--legend` | `-l` | Explain icons and colors |
 | `--quiet` | `-q` | Suppress progress output |
 
 ---
 
-## 🥐 More tools coming
+## 🥯 git-id
 
-This is a monorepo. More freshly baked git tools may appear here in the future.
+**Manage git identity profiles for multi-account workflows.**
+
+Juggling personal and work GitHub accounts? `git-id` stores identity profiles in your git config so you can switch contexts without kneading through config files.
+
+### What it stores
+
+Each profile can have:
+- 🔑 **SSH key** — path to the private key for this identity
+- 📧 **Email** — git author/committer email
+- 👤 **User** — git author/committer name
+- 🐙 **GitHub user** — username for `gh-as`
+
+### Installation
+
+```bash
+go install github.com/jdevera/git-this-bread/cmd/git-id@latest
+```
+
+### Usage
+
+```bash
+# List all profiles
+git-id
+
+# Create a new profile interactively
+git-id add personal
+
+# Show profile details
+git-id show personal
+
+# Set a single field
+git-id set personal email me@example.com
+
+# Remove a profile
+git-id remove personal
+```
+
+### Example output
+
+```
+$ git-id
+  personal: me@example.com (gh: myuser ✓)
+  work: me@company.com (gh: work-user ✓)
+
+$ git-id show personal
+Profile: personal
+Source:  /Users/me/.gitconfig
+
+  sshkey: ~/.ssh/id_personal ✓
+  email:  me@example.com
+  user:   My Name
+  ghuser: myuser ✓ authenticated
+```
+
+---
+
+## 🥨 git-as
+
+**Run git commands with a specific identity.**
+
+Use your identity profiles to run git commands with the right SSH key and email — no more pushing with the wrong account.
+
+### Installation
+
+```bash
+go install github.com/jdevera/git-this-bread/cmd/git-as@latest
+```
+
+### Usage
+
+```bash
+# Clone with your personal identity
+git-as personal clone git@github.com:user/repo.git
+
+# Push with your work identity
+git-as work push origin main
+
+# Commit as a specific identity
+git-as personal commit -m "Fix bug"
+```
+
+### How it works
+
+`git-as` sets environment variables and execs git:
+- `GIT_SSH_COMMAND` — uses the profile's SSH key
+- `GIT_AUTHOR_EMAIL` / `GIT_COMMITTER_EMAIL` — uses the profile's email
+- `GIT_AUTHOR_NAME` / `GIT_COMMITTER_NAME` — uses the profile's name (if set)
+
+---
+
+## 🥞 gh-as
+
+**Run GitHub CLI commands with a specific identity.**
+
+Switch between authenticated GitHub accounts for `gh` commands.
+
+### Installation
+
+```bash
+go install github.com/jdevera/git-this-bread/cmd/gh-as@latest
+```
+
+### Requirements
+
+The GitHub user must be authenticated with `gh auth login` before use.
+
+### Usage
+
+```bash
+# List PRs as your personal account
+gh-as personal pr list
+
+# Create an issue as your work account
+gh-as work issue create
+
+# Clone a repo as a specific user
+gh-as personal repo clone owner/repo
+```
+
+### How it works
+
+`gh-as` creates a temporary config directory with a `hosts.yml` that selects the specified user, then execs `gh` with `GH_CONFIG_DIR` pointing to it.
 
 ---
 
