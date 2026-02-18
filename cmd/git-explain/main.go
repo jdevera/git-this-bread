@@ -8,18 +8,24 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/jdevera/git-this-bread/internal/analyzer"
+	"github.com/jdevera/git-this-bread/internal/llmadvice"
 	"github.com/jdevera/git-this-bread/internal/render"
 )
 
 var (
-	verbose    bool
-	compact    bool
-	showAll    bool
-	useTable   bool
-	showLegend bool
-	quiet      bool
-	showAdvice bool
-	useJSON    bool
+	verbose         bool
+	compact         bool
+	showAll         bool
+	useTable        bool
+	showLegend      bool
+	quiet           bool
+	showAdvice      bool
+	useJSON         bool
+	llmAdvice       bool
+	llmProvider     string
+	llmInstructions string
+	noCache         bool
+	perRepo         bool
 )
 
 var rootCmd = &cobra.Command{
@@ -30,7 +36,23 @@ var rootCmd = &cobra.Command{
 Check your contribution status across git repositories.
 
 If DIRECTORY is a git repo, analyze it directly.
-Otherwise, analyze all immediate subdirectories.`,
+Otherwise, analyze all immediate subdirectories.
+
+LLM-POWERED ADVICE
+
+Enable intelligent, context-aware suggestions with --llm-advice.
+Requires an API key set in the environment:
+
+  OpenAI (default):
+    export OPENAI_API_KEY=sk-...
+    git explain --llm-advice --advice
+
+  Anthropic:
+    export ANTHROPIC_API_KEY=sk-ant-...
+    git explain --llm-advice --llm-provider anthropic --advice
+
+Advice is cached based on repo state. Use --no-cache to bypass.
+If the API is unavailable, falls back to rule-based advice.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runExplain,
 }
@@ -44,6 +66,11 @@ func init() {
 	rootCmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Suppress progress bar")
 	rootCmd.Flags().BoolVar(&showAdvice, "advice", false, "Show actionable advice for each repo")
 	rootCmd.Flags().BoolVar(&useJSON, "json", false, "Output as JSON")
+	rootCmd.Flags().BoolVar(&llmAdvice, "llm-advice", false, "Enable LLM-powered advice (requires API key in env)")
+	rootCmd.Flags().StringVar(&llmProvider, "llm-provider", "openai", "LLM provider: openai, anthropic")
+	rootCmd.Flags().StringVar(&llmInstructions, "llm-instructions", "", "Custom instructions for the LLM (e.g., persona or style)")
+	rootCmd.Flags().BoolVar(&noCache, "no-cache", false, "Bypass LLM advice cache")
+	rootCmd.Flags().BoolVar(&perRepo, "per-repo", false, "In multi-repo mode, analyze each repo individually with LLM")
 	rootCmd.MarkFlagsMutuallyExclusive("verbose", "compact")
 }
 
@@ -87,6 +114,19 @@ func runExplain(cmd *cobra.Command, args []string) error {
 		Verbose: useVerbose || useJSON,
 	}
 
+	// Build LLM options if enabled
+	var llmOpts *llmadvice.Options
+	if llmAdvice {
+		llmOpts = &llmadvice.Options{
+			Provider:     llmadvice.ProviderType(llmProvider),
+			NoCache:      noCache,
+			PerRepo:      perRepo,
+			Instructions: llmInstructions,
+		}
+		// --llm-advice implies --advice
+		showAdvice = true
+	}
+
 	if isSingleRepo {
 		// Single repo mode
 		repoInfo := analyzer.AnalyzeRepo(target, opts)
@@ -94,6 +134,7 @@ func runExplain(cmd *cobra.Command, args []string) error {
 			Verbose:    useVerbose,
 			ShowAdvice: showAdvice,
 			UseJSON:    useJSON,
+			LLMOpts:    llmOpts,
 		})
 	} else {
 		// Multi-repo mode
@@ -105,15 +146,12 @@ func runExplain(cmd *cobra.Command, args []string) error {
 		case useTable:
 			render.RenderTable(repos)
 		default:
-			for i := range repos {
-				repo := &repos[i]
-				if showAll || repo.IsGitRepo {
-					render.RenderRepo(repo, render.Options{
-						Verbose:    useVerbose,
-						ShowAdvice: showAdvice,
-					})
-				}
-			}
+			render.RenderRepos(repos, render.Options{
+				Verbose:    useVerbose,
+				ShowAdvice: showAdvice,
+				ShowAll:    showAll,
+				LLMOpts:    llmOpts,
+			})
 		}
 	}
 

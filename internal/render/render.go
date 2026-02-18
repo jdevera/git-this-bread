@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss/table"
 
 	"github.com/jdevera/git-this-bread/internal/analyzer"
+	"github.com/jdevera/git-this-bread/internal/llmadvice"
 )
 
 // Nerdfont icons
@@ -47,7 +48,9 @@ var (
 type Options struct {
 	Verbose    bool
 	ShowAdvice bool
+	ShowAll    bool
 	UseJSON    bool
+	LLMOpts    *llmadvice.Options
 }
 
 func RenderRepo(info *analyzer.RepoInfo, opts Options) {
@@ -57,15 +60,23 @@ func RenderRepo(info *analyzer.RepoInfo, opts Options) {
 		return
 	}
 
+	// Get LLM advice if enabled
+	var llmAdviceList []string
+	var llmError error
+	if opts.LLMOpts != nil && info.IsGitRepo && info.Error == "" {
+		basicAdvice := GetAdvice(info)
+		llmAdviceList, llmError = llmadvice.GetLLMAdvice(info, basicAdvice, *opts.LLMOpts)
+	}
+
 	if opts.Verbose {
-		renderRepoVerbose(info, opts)
+		renderRepoVerbose(info, opts, llmAdviceList, llmError)
 	} else {
-		renderRepoCompact(info, opts)
+		renderRepoCompact(info, opts, llmAdviceList, llmError)
 	}
 }
 
 // renderRepoCompact renders a single-line summary of the repo
-func renderRepoCompact(info *analyzer.RepoInfo, opts Options) {
+func renderRepoCompact(info *analyzer.RepoInfo, opts Options, llmAdvice []string, llmError error) {
 	if !info.IsGitRepo {
 		fmt.Printf("%s %s  %s\n",
 			dim.Render(Icons["folder"]),
@@ -155,14 +166,29 @@ func renderRepoCompact(info *analyzer.RepoInfo, opts Options) {
 
 	// Advice
 	if opts.ShowAdvice {
-		for _, advice := range GetAdvice(info) {
-			fmt.Printf("    → %s\n", advice)
+		adviceList := llmAdvice
+		usingFallback := false
+		if len(adviceList) == 0 && opts.LLMOpts != nil {
+			adviceList = GetAdvice(info)
+			usingFallback = true
+		} else if opts.LLMOpts == nil {
+			adviceList = GetAdvice(info)
+		}
+		if usingFallback && llmError != nil {
+			fmt.Printf("    %s\n", yellow.Render("⚠ LLM unavailable: "+llmError.Error()+" (using rule-based advice)"))
+		}
+		if len(adviceList) > 0 {
+			for _, advice := range adviceList {
+				fmt.Printf("    → %s\n", advice)
+			}
+		} else {
+			fmt.Printf("    %s\n", dim.Render("✓ No actions needed"))
 		}
 	}
 }
 
 // renderRepoVerbose renders a detailed multi-line view of the repo
-func renderRepoVerbose(info *analyzer.RepoInfo, opts Options) {
+func renderRepoVerbose(info *analyzer.RepoInfo, opts Options, llmAdvice []string, llmError error) {
 	if !info.IsGitRepo {
 		fmt.Printf("%s %s  %s\n",
 			dim.Render(Icons["folder"]),
@@ -304,17 +330,85 @@ func renderRepoVerbose(info *analyzer.RepoInfo, opts Options) {
 
 	// Advice
 	if opts.ShowAdvice {
-		adviceList := GetAdvice(info)
-		if len(adviceList) > 0 {
-			fmt.Println()
+		adviceList := llmAdvice
+		usingFallback := false
+		if len(adviceList) == 0 && opts.LLMOpts != nil {
+			adviceList = GetAdvice(info)
+			usingFallback = true
+		} else if opts.LLMOpts == nil {
+			adviceList = GetAdvice(info)
+		}
+		fmt.Println()
+		if usingFallback && llmError != nil {
+			fmt.Printf("    %s\n", yellow.Render("⚠ LLM unavailable: "+llmError.Error()))
+			if len(adviceList) > 0 {
+				fmt.Println("    Using rule-based advice:")
+			}
+		} else if len(adviceList) > 0 {
 			fmt.Println("    Advice:")
+		}
+		if len(adviceList) > 0 {
 			for _, advice := range adviceList {
 				fmt.Printf("        → %s\n", advice)
 			}
+		} else {
+			fmt.Printf("    %s\n", dim.Render("✓ No actions needed"))
 		}
 	}
 
 	fmt.Println()
+}
+
+// RenderRepos renders multiple repos with optional LLM advice
+func RenderRepos(repos []analyzer.RepoInfo, opts Options) {
+	// Handle LLM advice for multi-repo mode
+	var combinedAdvice []string
+	var perRepoAdvice map[string][]string
+	var llmError error
+
+	if opts.LLMOpts != nil {
+		// Filter to git repos only
+		var gitRepos []*analyzer.RepoInfo
+		for i := range repos {
+			if repos[i].IsGitRepo && repos[i].Error == "" {
+				gitRepos = append(gitRepos, &repos[i])
+			}
+		}
+
+		if len(gitRepos) > 0 {
+			combinedAdvice, perRepoAdvice, llmError = llmadvice.GetMultiRepoLLMAdvice(gitRepos, GetAdvice, *opts.LLMOpts)
+		}
+	}
+
+	// Render each repo
+	for i := range repos {
+		repo := &repos[i]
+		if !opts.ShowAll && !repo.IsGitRepo {
+			continue
+		}
+
+		// Get LLM advice for this specific repo if in per-repo mode
+		var repoLLMAdvice []string
+		if perRepoAdvice != nil {
+			repoLLMAdvice = perRepoAdvice[repo.Name]
+		}
+
+		if opts.Verbose {
+			renderRepoVerbose(repo, opts, repoLLMAdvice, llmError)
+		} else {
+			renderRepoCompact(repo, opts, repoLLMAdvice, llmError)
+		}
+	}
+
+	// Show combined LLM advice summary at the end (only in combined mode)
+	if len(combinedAdvice) > 0 {
+		fmt.Println()
+		fmt.Println(blueBold.Render("📊 LLM Summary:"))
+		for _, advice := range combinedAdvice {
+			fmt.Printf("  → %s\n", advice)
+		}
+		fmt.Println()
+	}
 }
 
 func RenderTable(repos []analyzer.RepoInfo) {

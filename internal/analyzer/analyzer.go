@@ -98,19 +98,22 @@ type Options struct {
 
 type DirtyDetails struct {
 	Untracked          int
+	UntrackedNames     []string
 	StagedFiles        int
+	StagedNames        []string
 	StagedInsertions   int
 	StagedDeletions    int
 	UnstagedFiles      int
+	UnstagedNames      []string
 	UnstagedInsertions int
 	UnstagedDeletions  int
 }
 
-func (d DirtyDetails) TotalFiles() int {
+func (d *DirtyDetails) TotalFiles() int {
 	return d.StagedFiles + d.UnstagedFiles + d.Untracked
 }
 
-func (d DirtyDetails) String() string {
+func (d *DirtyDetails) String() string {
 	var parts []string
 	if d.StagedFiles > 0 {
 		parts = append(parts, "staged:"+itoa(d.StagedFiles)+" +"+itoa(d.StagedInsertions)+"/-"+itoa(d.StagedDeletions))
@@ -129,6 +132,18 @@ type BranchInfo struct {
 	IsCurrent      bool
 	CommitCount    int
 	LastCommitDate string
+}
+
+type StashInfo struct {
+	Index   int
+	Message string
+	Date    string
+}
+
+type CommitInfo struct {
+	Hash    string
+	Message string
+	Date    string
 }
 
 type RemoteInfo struct {
@@ -155,6 +170,8 @@ type RepoInfo struct {
 	Ahead                 int
 	Behind                int
 	StashCount            int
+	Stashes               []StashInfo
+	RecentCommits         []CommitInfo // Recent commits on current branch
 	IsFork                bool
 	UpstreamURL           string
 	Error                 string
@@ -238,8 +255,11 @@ func AnalyzeRepo(path string, opts Options) RepoInfo {
 	// Working directory status and diff stats
 	info.HasUncommittedChanges, info.DirtyDetails = getDirtyDetails(path)
 
-	// Stash count
-	info.StashCount = getStashCount(path)
+	// Stash details
+	info.StashCount, info.Stashes = getStashes(path)
+
+	// Recent commits (for LLM context)
+	info.RecentCommits = getRecentCommits(path, 5)
 
 	// Ahead/behind
 	if head != nil && info.CurrentBranch != "(detached)" {
@@ -300,18 +320,27 @@ func getDirtyDetails(dir string) (bool, *DirtyDetails) {
 
 	details := &DirtyDetails{}
 	for _, line := range strings.Split(porcelain, "\n") {
-		if len(line) < 2 {
+		if len(line) < 3 {
 			continue
 		}
 		x, y := line[0], line[1]
+		filename := strings.TrimSpace(line[3:])
+		// Handle renames: "R  old -> new"
+		if idx := strings.Index(filename, " -> "); idx != -1 {
+			filename = filename[idx+4:]
+		}
+
 		if x == '?' && y == '?' {
 			details.Untracked++
+			details.UntrackedNames = append(details.UntrackedNames, filename)
 		} else {
 			if x != ' ' && x != '?' {
 				details.StagedFiles++
+				details.StagedNames = append(details.StagedNames, filename)
 			}
 			if y != ' ' && y != '?' {
 				details.UnstagedFiles++
+				details.UnstagedNames = append(details.UnstagedNames, filename)
 			}
 		}
 	}
@@ -335,13 +364,60 @@ func getDirtyDetails(dir string) (bool, *DirtyDetails) {
 	return false, nil
 }
 
-// getStashCount returns the number of stashes in the repo
-func getStashCount(dir string) int {
-	output := runGit(dir, "stash", "list")
+// getStashes returns stash count and details
+func getStashes(dir string) (int, []StashInfo) {
+	// Format: stash@{0}: On branch: message
+	output := runGit(dir, "stash", "list", "--format=%gd|%gs|%ar")
 	if output == "" {
-		return 0
+		return 0, nil
 	}
-	return len(strings.Split(strings.TrimSpace(output), "\n"))
+
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	stashes := make([]StashInfo, 0, len(lines))
+
+	for i, line := range lines {
+		parts := strings.SplitN(line, "|", 3)
+		if len(parts) >= 2 {
+			stash := StashInfo{
+				Index:   i,
+				Message: parts[1],
+			}
+			if len(parts) >= 3 {
+				stash.Date = parts[2]
+			}
+			stashes = append(stashes, stash)
+		}
+	}
+
+	return len(lines), stashes
+}
+
+// getRecentCommits returns recent commits on the current branch
+func getRecentCommits(dir string, limit int) []CommitInfo {
+	// Format: short hash|subject|relative date
+	output := runGit(dir, "log", fmt.Sprintf("-%d", limit), "--format=%h|%s|%ar")
+	if output == "" {
+		return nil
+	}
+
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	commits := make([]CommitInfo, 0, len(lines))
+
+	for _, line := range lines {
+		parts := strings.SplitN(line, "|", 3)
+		if len(parts) >= 2 {
+			commit := CommitInfo{
+				Hash:    parts[0],
+				Message: parts[1],
+			}
+			if len(parts) >= 3 {
+				commit.Date = parts[2]
+			}
+			commits = append(commits, commit)
+		}
+	}
+
+	return commits
 }
 
 func detectDefaultBranch(repo *git.Repository) string {
