@@ -14,6 +14,7 @@ A collection of git utilities, freshly baked in Go. Vibe-coded.
 |---------|-------|-------------|
 | **git-explain** | [git-explain](#-git-explain) | See contribution status across repositories |
 | **git-as** | [git-id](#-git-id), [git-as](#-git-as), [gh-as](#-gh-as) | Identity switching for git and GitHub CLI |
+| **gh-wtfork** | [gh-wtfork](#-gh-wtfork) | Analyze your GitHub forks |
 
 ---
 
@@ -258,6 +259,62 @@ gh-as personal repo clone owner/repo
 ### How it works
 
 `gh-as` creates a temporary config directory with a `hosts.yml` that selects the specified user, then execs `gh` with `GH_CONFIG_DIR` pointing to it.
+
+---
+
+## 🍴 gh-wtfork
+
+**What the fork? Analyze your GitHub forks.**
+
+See which forks have drifted from upstream, have unpushed branches, or can be safely deleted.
+
+### Installation
+
+```bash
+go install github.com/jdevera/git-this-bread/cmd/gh-wtfork@latest
+```
+
+### Usage
+
+```bash
+# Show active forks (hides untouched ones)
+gh-wtfork
+
+# Show all forks including untouched
+gh-wtfork --all
+
+# Run as a specific identity
+gh-wtfork --as work
+
+# Output as JSON
+gh-wtfork --json
+```
+
+### Example output
+
+```
+jdevera/acme.sh
+  upstream: acmesh-official/acme.sh
+  deviation: 441 behind
+  branches: 4 non-default
+    - multideploy-yaml (pushed 2025-08-31)
+    - patch-1 (pushed 2025-09-01)
+    - posix_globs_for_list (pushed 2026-01-02)
+
+jdevera/command-launcher
+  upstream: criteo/command-launcher
+  deviation: 12 ahead, 45 behind
+  branches: 3 non-default
+    - feature-branch (pushed 2025-10-20)
+  open PRs: 1
+```
+
+### What it shows
+
+- **deviation**: commits ahead/behind upstream's default branch
+- **branches**: non-default branches with last push date
+- **open PRs**: pull requests in your fork
+- **untouched**: forks with no changes (hidden by default)
 
 ---
 

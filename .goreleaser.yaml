@@ -49,6 +49,18 @@ builds:
     ldflags:
       - -s -w -X main.version={{.Version}}
 
+  - id: gh-wtfork
+    main: ./cmd/gh-wtfork
+    binary: gh-wtfork
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
 archives:
   - id: git-explain
     builds:
@@ -70,6 +82,7 @@ archives:
       - git-id
       - git-as
       - gh-as
+      - gh-wtfork
     name_template: "git-this-bread_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format: tar.gz
 
@@ -131,3 +144,4 @@ brews:
       bin.install "git-id"
       bin.install "git-as"
       bin.install "gh-as"
+      bin.install "gh-wtfork"
