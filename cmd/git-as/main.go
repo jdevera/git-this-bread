@@ -6,54 +6,66 @@ import (
 	"os/exec"
 	"syscall"
 
+	"github.com/spf13/cobra"
+
 	"github.com/jdevera/git-this-bread/internal/identity"
 )
 
+var rootCmd = &cobra.Command{
+	Use:   "git-as <profile> [git args...]",
+	Short: "Run git commands with a specific identity profile",
+	Long: `git-as (a git-this-bread tool)
+
+Run git commands with a specific identity profile.
+
+The profile must have 'sshkey' and 'email' configured.
+Use 'git-id' to manage profiles.`,
+	Example: `  git-as personal status
+  git-as work push origin main
+  git-as personal commit -m 'Fix bug'`,
+	Args:               cobra.MinimumNArgs(1),
+	DisableFlagParsing: true, // Pass all flags to git
+	RunE:               run,
+}
+
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "Usage: git-as <profile> [git args...]")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Run git commands with a specific identity profile.")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "The profile must have 'sshkey' and 'email' configured.")
-		fmt.Fprintln(os.Stderr, "Use 'git-id' to manage profiles.")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Examples:")
-		fmt.Fprintln(os.Stderr, "  git-as personal status")
-		fmt.Fprintln(os.Stderr, "  git-as work push origin main")
-		fmt.Fprintln(os.Stderr, "  git-as personal commit -m 'Fix bug'")
+	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
+}
 
-	profileName := os.Args[1]
-	gitArgs := os.Args[2:]
+func run(cmd *cobra.Command, args []string) error {
+	// Check for help flags manually since we disabled flag parsing
+	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help") {
+		return cmd.Help()
+	}
+
+	if len(args) < 1 {
+		return fmt.Errorf("missing profile argument")
+	}
+
+	profileName := args[0]
+	gitArgs := args[1:]
 
 	// Load the profile
 	profile, err := identity.Get(profileName)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		fmt.Fprintf(os.Stderr, "Use 'git-id list' to see available profiles.\n")
-		os.Exit(1)
+		return fmt.Errorf("%w\nUse 'git-id list' to see available profiles", err)
 	}
 
 	// Validate required fields
 	if profile.SSHKey == "" {
-		fmt.Fprintf(os.Stderr, "Error: profile '%s' has no SSH key configured.\n", profileName)
-		fmt.Fprintf(os.Stderr, "Use: git-id set %s sshkey <path>\n", profileName)
-		os.Exit(1)
+		return fmt.Errorf("profile '%s' has no SSH key configured.\nUse: git-id set %s sshkey <path>", profileName, profileName)
 	}
 
 	if profile.Email == "" {
-		fmt.Fprintf(os.Stderr, "Error: profile '%s' has no email configured.\n", profileName)
-		fmt.Fprintf(os.Stderr, "Use: git-id set %s email <email>\n", profileName)
-		os.Exit(1)
+		return fmt.Errorf("profile '%s' has no email configured.\nUse: git-id set %s email <email>", profileName, profileName)
 	}
 
 	// Validate SSH key exists
 	expandedKey := identity.ExpandPath(profile.SSHKey)
 	if err := identity.ValidateSSHKey(profile.SSHKey); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		return err
 	}
 
 	// Build environment with identity overrides
@@ -73,8 +85,7 @@ func main() {
 	// Find git executable
 	gitPath, err := exec.LookPath("git")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: git not found in PATH\n")
-		os.Exit(1)
+		return fmt.Errorf("git not found in PATH")
 	}
 
 	// Build args for exec (argv[0] should be the command name)
@@ -82,7 +93,8 @@ func main() {
 
 	// Replace this process with git
 	if err := syscall.Exec(gitPath, execArgs, env); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: failed to exec git: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to exec git: %w", err)
 	}
+
+	return nil // unreachable
 }

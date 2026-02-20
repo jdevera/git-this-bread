@@ -7,34 +7,46 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/spf13/cobra"
+
 	"github.com/jdevera/git-this-bread/internal/identity"
 )
 
+var rootCmd = &cobra.Command{
+	Use:   "gh-as <profile> [gh args...]",
+	Short: "Run gh (GitHub CLI) commands with a specific identity profile",
+	Long: `gh-as (a git-this-bread tool)
+
+Run gh (GitHub CLI) commands with a specific identity profile.
+
+The profile must have 'ghuser' configured and authenticated.
+Use 'git-id' to manage profiles.`,
+	Example: `  gh-as personal pr list
+  gh-as work issue create
+  gh-as personal repo clone owner/repo`,
+	Args:               cobra.MinimumNArgs(1),
+	DisableFlagParsing: true, // Pass all flags to gh
+	RunE:               run,
+}
+
 func main() {
-	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
 }
 
-func run() error {
-	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "Usage: gh-as <profile> [gh args...]")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Run gh (GitHub CLI) commands with a specific identity profile.")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "The profile must have 'ghuser' configured and authenticated.")
-		fmt.Fprintln(os.Stderr, "Use 'git-id' to manage profiles.")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Examples:")
-		fmt.Fprintln(os.Stderr, "  gh-as personal pr list")
-		fmt.Fprintln(os.Stderr, "  gh-as work issue create")
-		fmt.Fprintln(os.Stderr, "  gh-as personal repo clone owner/repo")
+func run(cmd *cobra.Command, args []string) error {
+	// Check for help flags manually since we disabled flag parsing
+	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help") {
+		return cmd.Help()
+	}
+
+	if len(args) < 1 {
 		return fmt.Errorf("missing profile argument")
 	}
 
-	profileName := os.Args[1]
-	ghArgs := os.Args[2:]
+	profileName := args[0]
+	ghArgs := args[1:]
 
 	// Load the profile
 	profile, err := identity.Get(profileName)
@@ -113,17 +125,14 @@ func run() error {
 
 // getGHConfigDir returns the gh CLI config directory.
 func getGHConfigDir() string {
-	// Check GH_CONFIG_DIR first
 	if dir := os.Getenv("GH_CONFIG_DIR"); dir != "" {
 		return dir
 	}
 
-	// Check XDG_CONFIG_HOME
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
 		return filepath.Join(xdg, "gh")
 	}
 
-	// Default to ~/.config/gh
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
