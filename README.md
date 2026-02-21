@@ -16,6 +16,30 @@ A collection of git utilities, freshly baked in Go. Vibe-coded.
 | **git-as** | [git-id](#-git-id), [git-as](#-git-as), [gh-as](#-gh-as) | Identity switching for git and GitHub CLI |
 | **gh-wtfork** | [gh-wtfork](#-gh-wtfork) | What the fork? Triage years of GitHub forks |
 
+## Installation
+
+### Homebrew (recommended)
+
+```bash
+brew install jdevera/tap/git-this-bread
+```
+
+This installs: `git-explain`, `git-id`, `git-as`, `gh-as`, `gh-wtfork`
+
+### Go install
+
+```bash
+# Install all at once
+git clone https://github.com/jdevera/git-this-bread && cd git-this-bread && go install ./cmd/...
+
+# Or one by one
+go install github.com/jdevera/git-this-bread/cmd/git-explain@latest
+go install github.com/jdevera/git-this-bread/cmd/git-id@latest
+go install github.com/jdevera/git-this-bread/cmd/git-as@latest
+go install github.com/jdevera/git-this-bread/cmd/gh-as@latest
+go install github.com/jdevera/git-this-bread/cmd/gh-wtfork@latest
+```
+
 ---
 
 ## 🥖 git-explain
@@ -32,18 +56,6 @@ Ever wonder which repos in a folder are yours, which are forks, and which are ju
 - 📝 **Dirty status** — staged, modified, untracked files with line counts
 - ⬆️ **Unpushed commits** — don't leave your dough unproofed
 - 📦 **Stashes** — forgotten stashes you should deal with
-
-### Installation
-
-```bash
-go install github.com/jdevera/git-this-bread/cmd/git-explain@latest
-```
-
-Then use it as a git subcommand:
-
-```bash
-git explain ~/projects
-```
 
 ### Requirements
 
@@ -149,12 +161,6 @@ Each profile can have:
 - 👤 **User** — git author/committer name
 - 🐙 **GitHub user** — username for `gh-as`
 
-### Installation
-
-```bash
-go install github.com/jdevera/git-this-bread/cmd/git-id@latest
-```
-
 ### Usage
 
 ```bash
@@ -199,12 +205,6 @@ Source:  /Users/me/.gitconfig
 
 Use your identity profiles to run git commands with the right SSH key and email — no more pushing with the wrong account.
 
-### Installation
-
-```bash
-go install github.com/jdevera/git-this-bread/cmd/git-as@latest
-```
-
 ### Usage
 
 ```bash
@@ -232,12 +232,6 @@ git-as personal commit -m "Fix bug"
 **Run GitHub CLI commands with a specific identity.**
 
 Switch between authenticated GitHub accounts for `gh` commands.
-
-### Installation
-
-```bash
-go install github.com/jdevera/git-this-bread/cmd/gh-as@latest
-```
 
 ### Requirements
 
@@ -280,12 +274,6 @@ For each fork, you'll see:
 - How far ahead/behind upstream, and *when* (is upstream dead? is your fork stale?)
 - Your branches with age and associated PR status (open, merged, or closed)
 - Whether that old branch is finished business or still pending
-
-### Installation
-
-```bash
-go install github.com/jdevera/git-this-bread/cmd/gh-wtfork@latest
-```
 
 ### Usage
 

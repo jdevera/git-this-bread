@@ -76,6 +76,12 @@ archives:
     name_template: "git-as_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format: tar.gz
 
+  - id: gh-wtfork
+    builds:
+      - gh-wtfork
+    name_template: "gh-wtfork_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+
   - id: git-this-bread
     builds:
       - git-explain
@@ -98,36 +104,6 @@ changelog:
       - '^test:'
 
 brews:
-  - name: git-explain
-    ids:
-      - git-explain
-    repository:
-      owner: jdevera
-      name: homebrew-tap
-      branch: main
-      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    homepage: https://github.com/jdevera/git-this-bread
-    description: See your contribution status across git repositories
-    license: MIT
-    install: |
-      bin.install "git-explain"
-
-  - name: git-as
-    ids:
-      - git-as-bundle
-    repository:
-      owner: jdevera
-      name: homebrew-tap
-      branch: main
-      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    homepage: https://github.com/jdevera/git-this-bread
-    description: Identity switching for git and GitHub CLI
-    license: MIT
-    install: |
-      bin.install "git-id"
-      bin.install "git-as"
-      bin.install "gh-as"
-
   - name: git-this-bread
     ids:
       - git-this-bread
