@@ -14,20 +14,24 @@ mise run lint     # golangci-lint
 
 - git-explain — repo status analyzer (see cmd/git-explain/AGENTS.md)
 - git-as — identity tools bundle: git-id, git-as, gh-as (see cmd/git-id/AGENTS.md)
+- gh-wtfork — GitHub fork analyzer
+
+## Caching
+
+Tools cache expensive operations in `~/.cache/git-this-bread/`. See `docs/caching.md` for strategy.
 
 ## Releases
 
-GoReleaser builds binaries and Homebrew formulas on tag push:
+GoReleaser builds binaries and Homebrew formula on tag push:
 
 ```
 git tag v1.0.0 && git push --tags
 ```
 
-Formulas pushed to `jdevera/homebrew-tap`. Install with:
+Formula pushed to `jdevera/homebrew-tap`. Install with:
 
 ```
-brew install jdevera/tap/git-explain
-brew install jdevera/tap/git-as
+brew install jdevera/tap/git-this-bread
 ```
 
 ## Test Helpers
