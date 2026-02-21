@@ -14,7 +14,7 @@ A collection of git utilities, freshly baked in Go. Vibe-coded.
 |---------|-------|-------------|
 | **git-explain** | [git-explain](#-git-explain) | See contribution status across repositories |
 | **git-as** | [git-id](#-git-id), [git-as](#-git-as), [gh-as](#-gh-as) | Identity switching for git and GitHub CLI |
-| **gh-wtfork** | [gh-wtfork](#-gh-wtfork) | Analyze your GitHub forks |
+| **gh-wtfork** | [gh-wtfork](#-gh-wtfork) | What the fork? Triage years of GitHub forks |
 
 ---
 
@@ -266,7 +266,20 @@ gh-as personal repo clone owner/repo
 
 **What the fork? Analyze your GitHub forks.**
 
-See which forks have drifted from upstream, have unpushed branches, or can be safely deleted.
+You've accumulated mass amounts of repositories after years of compulsive open source contribution. You no longer know what's yours and what's not. Tell apart the projects you're actively maintaining from that fork you made in 2010 to correct a typo.
+
+### What it shows
+
+`gh-wtfork` categorizes your forks into three groups:
+
+- **Maintained** — you're ahead on the default branch (keeping your own version)
+- **Contributions** — not ahead, but has branches or PRs (contributing back upstream)
+- **Untouched** — no changes at all (can probably delete)
+
+For each fork, you'll see:
+- How far ahead/behind upstream, and *when* (is upstream dead? is your fork stale?)
+- Your branches with age and associated PR status (open, merged, or closed)
+- Whether that old branch is finished business or still pending
 
 ### Installation
 
@@ -293,28 +306,22 @@ gh-wtfork --json
 ### Example output
 
 ```
-jdevera/acme.sh
-  upstream: acmesh-official/acme.sh
-  deviation: 441 behind
-  branches: 4 non-default
-    - multideploy-yaml (pushed 2025-08-31)
-    - patch-1 (pushed 2025-09-01)
-    - posix_globs_for_list (pushed 2026-01-02)
+● Maintained
+🍴 jdevera/command-launcher
+    ↑ criteo/command-launcher
+    ↑ 12 ahead (3mo ago)  ↓ 45 behind (upstream: 2d ago)
+    ⎇ feature-branch  2025-10-20 · 4mo ago
+        🔀 merged #89 Add self-update version comparison
 
-jdevera/command-launcher
-  upstream: criteo/command-launcher
-  deviation: 12 ahead, 45 behind
-  branches: 3 non-default
-    - feature-branch (pushed 2025-10-20)
-  open PRs: 1
+○ Contributions
+🍴 jdevera/acme.sh
+    ↑ acmesh-official/acme.sh
+    ↓ 441 behind (upstream: 2d ago)
+    ⎇ multideploy-yaml  2025-08-31 · 6mo ago
+        🔀 merged #4521 Add multi-deploy YAML support
+    ⎇ patch-1  2025-09-01 · 6mo ago
+        ✖ closed #4530 Fix typo in README
 ```
-
-### What it shows
-
-- **deviation**: commits ahead/behind upstream's default branch
-- **branches**: non-default branches with last push date
-- **open PRs**: pull requests in your fork
-- **untouched**: forks with no changes (hidden by default)
 
 ---
 

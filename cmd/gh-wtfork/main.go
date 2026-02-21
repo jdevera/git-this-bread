@@ -8,7 +8,11 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
 	"github.com/jdevera/git-this-bread/internal/identity"
@@ -20,6 +24,47 @@ var (
 	jsonOutput bool
 )
 
+// Styles
+var (
+	greenBold = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true)
+	green     = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+	yellow    = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+	red       = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+	cyan      = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+	dim       = lipgloss.NewStyle().Faint(true)
+	dimItalic = lipgloss.NewStyle().Faint(true).Italic(true)
+)
+
+// Icons
+var icons = map[string]string{
+	"fork":     "\uf402", // nf-oct-repo_forked
+	"upstream": "\uf062", // nf-fa-arrow_up
+	"branch":   "\ue725", // nf-dev-git_branch
+	"pr":       "\uf407", // nf-oct-git_pull_request
+	"merged":   "\uf419", // nf-oct-git_merge
+	"closed":   "\uf659", // nf-mdi-close_circle
+	"sync":     "\uf021", // nf-fa-refresh
+	"ahead":    "\uf176", // nf-fa-long_arrow_up
+	"behind":   "\uf175", // nf-fa-long_arrow_down
+	"check":    "\uf00c", // nf-fa-check
+	"warning":  "\uf071", // nf-fa-warning
+	"spinner":  "\uf110", // nf-fa-spinner
+}
+
+// PR states
+const (
+	PRStateOpen   = "OPEN"
+	PRStateMerged = "MERGED"
+	PRStateClosed = "CLOSED"
+)
+
+// Fork categories
+const (
+	CategoryMaintained   = "maintained"   // Ahead on default branch - you're keeping your own version
+	CategoryContribution = "contribution" // Not ahead, but has branches/PRs - just for contributing
+	CategoryUntouched    = "untouched"    // No changes - can be deleted
+)
+
 type Fork struct {
 	Name           string   `json:"name"`
 	FullName       string   `json:"full_name"`
@@ -27,17 +72,30 @@ type Fork struct {
 	ParentName     string   `json:"parent_name"`
 	ParentFullName string   `json:"parent_full_name"`
 	DefaultBranch  string   `json:"default_branch"`
+	Category       string   `json:"category"` // maintained, contribution, or untouched
 	Ahead          int      `json:"ahead"`
 	Behind         int      `json:"behind"`
+	ForkLastCommit string   `json:"fork_last_commit,omitempty"`     // Last commit on fork's default branch
+	ForkLastAgo    string   `json:"fork_last_ago,omitempty"`        // Relative time
+	UpstreamLast   string   `json:"upstream_last_commit,omitempty"` // Last commit on upstream's default branch
+	UpstreamAgo    string   `json:"upstream_last_ago,omitempty"`    // Relative time
 	Branches       []Branch `json:"branches,omitempty"`
-	OpenPRs        int      `json:"open_prs"`
-	Untouched      bool     `json:"untouched"`
+	Untouched      bool     `json:"untouched"` // Deprecated: use Category == CategoryUntouched
 }
 
 type Branch struct {
 	Name      string `json:"name"`
-	LastPush  string `json:"last_push"`
+	Date      string `json:"date"`     // ISO date
+	DateAgo   string `json:"date_ago"` // Human-readable relative time
 	IsDefault bool   `json:"is_default"`
+	PR        *PR    `json:"pr,omitempty"` // Associated PR if any
+}
+
+type PR struct {
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	State  string `json:"state"` // OPEN, MERGED, CLOSED
+	URL    string `json:"url"`
 }
 
 var rootCmd = &cobra.Command{
@@ -45,11 +103,14 @@ var rootCmd = &cobra.Command{
 	Short: "What the fork? Analyze your GitHub forks",
 	Long: `gh-wtfork (a git-this-bread tool)
 
-Analyze all your GitHub forks to see:
-- How much they've deviated from upstream (ahead/behind)
-- Non-default branches and when they were last pushed
-- Open pull requests
-- Whether forks are "untouched" (can be safely deleted)
+Triage years of GitHub forks. Categorizes your forks into:
+
+  • Maintained    — ahead on default branch (your own version)
+  • Contribution  — has branches/PRs (contributing upstream)
+  • Untouched     — no changes (can probably delete)
+
+For each fork shows deviation with temporal context, branches
+with age, and linked PR status (open/merged/closed).
 
 Use --as to run with a specific identity profile managed by git-id.`,
 	RunE: run,
@@ -68,18 +129,33 @@ func main() {
 	}
 }
 
+// Progress update sent from workers
+type progressUpdate struct {
+	repo   string
+	action string
+}
+
 func run(cmd *cobra.Command, args []string) error {
-	// Set up gh command runner
 	ghCmd := &ghRunner{profile: asProfile}
 	defer ghCmd.cleanup()
 
-	// Verify gh is authenticated
+	// Show immediate feedback
+	fmt.Fprintf(os.Stderr, "%s %s",
+		cyan.Render("⠋"),
+		dim.Render("Checking authentication..."))
+
 	if err := ghCmd.checkAuth(); err != nil {
+		fmt.Fprintf(os.Stderr, "\r\033[K")
 		return err
 	}
 
-	// Get all user's repos that are forks
+	fmt.Fprintf(os.Stderr, "\r\033[K%s %s",
+		cyan.Render("⠙"),
+		dim.Render("Fetching fork list..."))
+
 	forks, err := ghCmd.listForks()
+	fmt.Fprintf(os.Stderr, "\r\033[K") // Clear before error or continue
+
 	if err != nil {
 		return fmt.Errorf("failed to list forks: %w", err)
 	}
@@ -89,21 +165,100 @@ func run(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Analyze each fork
-	var results []Fork
+	// Parallel analysis with progress updates
 	total := len(forks)
-	for i := range forks {
-		// Clear line and show progress
-		fmt.Fprintf(os.Stderr, "\r\033[K[%d/%d] Analyzing: %s", i+1, total, forks[i].Name)
+	results := make([]Fork, total)
+	errors := make([]error, total)
 
-		analyzed, err := ghCmd.analyzeFork(&forks[i])
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "\n  Warning: failed to analyze %s: %v\n", forks[i].FullName, err)
+	// Progress channel for sub-action updates
+	progress := make(chan progressUpdate, 100)
+	var completed atomic.Int32
+
+	// Spinner goroutine - keeps progress on single line
+	done := make(chan struct{})
+	go func() {
+		spinner := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+		tick := 0
+		lastUpdate := progressUpdate{}
+
+		ticker := time.NewTicker(80 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-done:
+				return
+			case update := <-progress:
+				lastUpdate = update
+			case <-ticker.C:
+				tick++
+				spinChar := spinner[tick%len(spinner)]
+				comp := completed.Load()
+
+				// Build progress line, truncate to ~70 chars to avoid wrapping
+				var line string
+				if lastUpdate.repo != "" {
+					repoName := lastUpdate.repo
+					if len(repoName) > 20 {
+						repoName = repoName[:17] + "..."
+					}
+					line = fmt.Sprintf("%s Analyzing [%d/%d] %s · %s",
+						spinChar, comp, total, repoName, lastUpdate.action)
+				} else {
+					line = fmt.Sprintf("%s Analyzing [%d/%d]",
+						spinChar, comp, total)
+				}
+
+				// Truncate if too long (terminal safe)
+				if len(line) > 70 {
+					line = line[:67] + "..."
+				}
+
+				fmt.Fprintf(os.Stderr, "\r\033[K%s", cyan.Render(line))
+			}
+		}
+	}()
+
+	// Worker pool - 5 concurrent workers to respect GitHub rate limits
+	const maxWorkers = 5
+	sem := make(chan struct{}, maxWorkers)
+	var wg sync.WaitGroup
+
+	for i := range forks {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			sem <- struct{}{}        // Acquire
+			defer func() { <-sem }() // Release
+
+			analyzed, err := ghCmd.analyzeForkWithProgress(&forks[idx], progress)
+			results[idx] = analyzed
+			errors[idx] = err
+			completed.Add(1)
+		}(i)
+	}
+
+	wg.Wait()
+	close(done)
+	close(progress)
+
+	// Collect results, report errors
+	var finalResults []Fork
+	for i := range results {
+		if errors[i] != nil {
+			fmt.Fprintf(os.Stderr, "\r\033[K  %s failed to analyze %s: %v\n",
+				yellow.Render(icons["warning"]), forks[i].FullName, errors[i])
 			continue
 		}
-		results = append(results, analyzed)
+		if results[i].FullName != "" {
+			finalResults = append(finalResults, results[i])
+		}
 	}
-	fmt.Fprintf(os.Stderr, "\r\033[K") // Clear progress line
+
+	fmt.Fprintf(os.Stderr, "\r\033[K%s Analyzed %d forks\n\n",
+		green.Render(icons["check"]), len(finalResults))
+
+	results = finalResults
 
 	// Filter untouched if not showing all
 	if !showAll {
@@ -116,15 +271,19 @@ func run(cmd *cobra.Command, args []string) error {
 		results = filtered
 	}
 
-	// Sort: touched forks first, then by name
+	// Sort: maintained > contribution > untouched, then by name
+	categoryOrder := map[string]int{
+		CategoryMaintained:   0,
+		CategoryContribution: 1,
+		CategoryUntouched:    2,
+	}
 	sort.Slice(results, func(i, j int) bool {
-		if results[i].Untouched != results[j].Untouched {
-			return !results[i].Untouched
+		if results[i].Category != results[j].Category {
+			return categoryOrder[results[i].Category] < categoryOrder[results[j].Category]
 		}
 		return results[i].Name < results[j].Name
 	})
 
-	// Output
 	if jsonOutput {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -137,53 +296,177 @@ func run(cmd *cobra.Command, args []string) error {
 
 func printResults(forks []Fork) {
 	if len(forks) == 0 {
-		fmt.Println("No active forks found. Use --all to see untouched forks.")
+		fmt.Println(dim.Render("No active forks found. Use --all to see untouched forks."))
 		return
 	}
 
+	// Group header tracking
+	lastCategory := ""
+
 	for i := range forks {
 		f := &forks[i]
-		status := ""
-		if f.Untouched {
-			status = " (untouched)"
-		}
-		fmt.Printf("\n%s%s\n", f.FullName, status)
-		fmt.Printf("  upstream: %s\n", f.ParentFullName)
 
-		// Deviation
+		// Print category header when it changes
+		if f.Category != lastCategory {
+			if lastCategory != "" {
+				fmt.Println() // Extra space between categories
+			}
+			switch f.Category {
+			case CategoryMaintained:
+				fmt.Printf("%s %s\n", greenBold.Render("●"), greenBold.Render("Maintained"))
+			case CategoryContribution:
+				fmt.Printf("%s %s\n", yellow.Render("○"), yellow.Render("Contributions"))
+			case CategoryUntouched:
+				fmt.Printf("%s %s\n", dim.Render("·"), dim.Render("Untouched"))
+			}
+			lastCategory = f.Category
+		}
+
+		// Fork name with icon
+		forkIcon := icons["fork"]
+		var nameStyled string
+		switch f.Category {
+		case CategoryMaintained:
+			nameStyled = greenBold.Render(f.FullName)
+			fmt.Printf("%s %s\n", green.Render(forkIcon), nameStyled)
+		case CategoryContribution:
+			nameStyled = yellow.Render(f.FullName)
+			fmt.Printf("%s %s\n", yellow.Render(forkIcon), nameStyled)
+		case CategoryUntouched:
+			nameStyled = dim.Render(f.FullName)
+			fmt.Printf("%s %s\n", dim.Render(forkIcon), nameStyled)
+		}
+
+		// Upstream
+		fmt.Printf("    %s %s\n", dim.Render(icons["upstream"]), dim.Render(f.ParentFullName))
+
+		// Deviation with temporal context
 		if f.Ahead > 0 || f.Behind > 0 {
-			fmt.Printf("  deviation: ")
-			parts := []string{}
+			var parts []string
 			if f.Ahead > 0 {
-				parts = append(parts, fmt.Sprintf("%d ahead", f.Ahead))
+				aheadStr := fmt.Sprintf("%s %d ahead", icons["ahead"], f.Ahead)
+				if f.ForkLastAgo != "" {
+					aheadStr += fmt.Sprintf(" (%s)", f.ForkLastAgo)
+				}
+				parts = append(parts, greenBold.Render(aheadStr))
 			}
 			if f.Behind > 0 {
-				parts = append(parts, fmt.Sprintf("%d behind", f.Behind))
+				behindStr := fmt.Sprintf("%s %d behind", icons["behind"], f.Behind)
+				if f.UpstreamAgo != "" {
+					behindStr += fmt.Sprintf(" (upstream: %s)", f.UpstreamAgo)
+				}
+				parts = append(parts, red.Render(behindStr))
 			}
-			fmt.Println(strings.Join(parts, ", "))
+			fmt.Printf("    %s\n", strings.Join(parts, "  "))
 		} else {
-			fmt.Println("  deviation: in sync")
+			syncStr := "in sync"
+			if f.UpstreamAgo != "" {
+				syncStr += fmt.Sprintf(" (upstream: %s)", f.UpstreamAgo)
+			}
+			fmt.Printf("    %s %s\n", green.Render(icons["sync"]), green.Render(syncStr))
 		}
 
-		// Branches
-		nonDefaultBranches := []Branch{}
-		for _, b := range f.Branches {
-			if !b.IsDefault {
-				nonDefaultBranches = append(nonDefaultBranches, b)
+		// Branches (non-default only)
+		var nonDefaultBranches []Branch
+		for j := range f.Branches {
+			if !f.Branches[j].IsDefault {
+				nonDefaultBranches = append(nonDefaultBranches, f.Branches[j])
 			}
 		}
+
 		if len(nonDefaultBranches) > 0 {
-			fmt.Printf("  branches: %d non-default\n", len(nonDefaultBranches))
 			for _, b := range nonDefaultBranches {
-				fmt.Printf("    - %s (pushed %s)\n", b.Name, b.LastPush)
+				branchLine := fmt.Sprintf("    %s %s", cyan.Render(icons["branch"]), cyan.Render(b.Name))
+
+				// Date and age
+				if b.Date != "" {
+					branchLine += fmt.Sprintf("  %s", dim.Render(b.Date))
+					if b.DateAgo != "" {
+						branchLine += fmt.Sprintf(" · %s", dimItalic.Render(b.DateAgo))
+					}
+				}
+				fmt.Println(branchLine)
+
+				// PR info
+				if b.PR != nil {
+					prIcon := icons["pr"]
+					prStyle := yellow // default for open
+					stateLabel := "open"
+
+					switch b.PR.State {
+					case PRStateMerged:
+						prIcon = icons["merged"]
+						prStyle = greenBold
+						stateLabel = "merged"
+					case PRStateClosed:
+						prIcon = icons["closed"]
+						prStyle = red
+						stateLabel = "closed"
+					}
+
+					fmt.Printf("        %s %s #%d %s\n",
+						prStyle.Render(prIcon),
+						prStyle.Render(stateLabel),
+						b.PR.Number,
+						dim.Render(truncate(b.PR.Title, 50)))
+				}
 			}
 		}
 
-		// Open PRs
-		if f.OpenPRs > 0 {
-			fmt.Printf("  open PRs: %d\n", f.OpenPRs)
+		fmt.Println()
+	}
+}
+
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen-3] + "..."
+}
+
+// relativeTime returns a human-readable relative time string
+// If years present: "Xy Xmo"
+// If months present: "Xmo Xd"
+// Otherwise: "Xd"
+func relativeTime(isoDate string) string {
+	if len(isoDate) < 10 {
+		return ""
+	}
+
+	t, err := time.Parse("2006-01-02", isoDate[:10])
+	if err != nil {
+		// Try ISO 8601 format
+		t, err = time.Parse(time.RFC3339, isoDate)
+		if err != nil {
+			return ""
 		}
 	}
+
+	now := time.Now()
+	diff := now.Sub(t)
+
+	days := int(diff.Hours() / 24)
+	months := days / 30
+	years := months / 12
+	months %= 12
+	days %= 30
+
+	if years > 0 {
+		if months > 0 {
+			return fmt.Sprintf("%dy %dmo ago", years, months)
+		}
+		return fmt.Sprintf("%dy ago", years)
+	}
+	if months > 0 {
+		if days > 0 {
+			return fmt.Sprintf("%dmo %dd ago", months, days)
+		}
+		return fmt.Sprintf("%dmo ago", months)
+	}
+	if days > 0 {
+		return fmt.Sprintf("%dd ago", days)
+	}
+	return "today"
 }
 
 type ghRunner struct {
@@ -195,7 +478,6 @@ func (g *ghRunner) run(args ...string) ([]byte, error) {
 	cmd := exec.Command("gh", args...)
 
 	if g.profile != "" {
-		// Set up temporary gh config for identity
 		if g.tmpDir == "" {
 			if err := g.setupIdentity(); err != nil {
 				return nil, err
@@ -217,14 +499,12 @@ func (g *ghRunner) setupIdentity() error {
 		return fmt.Errorf("profile %q has no GitHub user configured", g.profile)
 	}
 
-	// Create temp directory
 	tmpDir, err := os.MkdirTemp("", "gh-wtfork-*")
 	if err != nil {
 		return err
 	}
 	g.tmpDir = tmpDir
 
-	// Find real gh config dir
 	realConfigDir := os.Getenv("GH_CONFIG_DIR")
 	if realConfigDir == "" {
 		if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
@@ -235,13 +515,11 @@ func (g *ghRunner) setupIdentity() error {
 		}
 	}
 
-	// Symlink config.yml
 	realConfig := filepath.Join(realConfigDir, "config.yml")
 	if _, err := os.Stat(realConfig); err == nil {
 		_ = os.Symlink(realConfig, filepath.Join(tmpDir, "config.yml"))
 	}
 
-	// Write hosts.yml
 	hostsContent := fmt.Sprintf(`github.com:
     git_protocol: ssh
     users:
@@ -328,7 +606,7 @@ func (g *ghRunner) listForks() ([]ghRepo, error) {
 	return result.Data.Viewer.Repositories.Nodes, nil
 }
 
-func (g *ghRunner) analyzeFork(repo *ghRepo) (Fork, error) { //nolint:unparam // error kept for future use
+func (g *ghRunner) analyzeForkWithProgress(repo *ghRepo, progress chan<- progressUpdate) (Fork, error) { //nolint:unparam // error kept for future use
 	f := Fork{
 		Name:          repo.Name,
 		FullName:      repo.FullName,
@@ -341,35 +619,69 @@ func (g *ghRunner) analyzeFork(repo *ghRepo) (Fork, error) { //nolint:unparam //
 		f.ParentFullName = repo.Parent.FullName
 	}
 
-	// Get comparison with upstream
+	// Get comparison with upstream and last commit dates
 	if repo.Parent != nil {
+		progress <- progressUpdate{repo: repo.Name, action: "comparing with upstream"}
 		comparison, err := g.getComparison(repo.FullName, repo.Parent.FullName, repo.DefaultBranch.Name)
 		if err == nil {
 			f.Ahead = comparison.AheadBy
 			f.Behind = comparison.BehindBy
 		}
+
+		// Get last commit dates for both fork and upstream default branches
+		progress <- progressUpdate{repo: repo.Name, action: "checking commit dates"}
+		if forkDate, err := g.getLastCommitDate(repo.FullName, repo.DefaultBranch.Name); err == nil {
+			f.ForkLastCommit = formatDate(forkDate)
+			f.ForkLastAgo = relativeTime(forkDate)
+		}
+		if upstreamDate, err := g.getLastCommitDate(repo.Parent.FullName, repo.Parent.DefaultBranch.Name); err == nil {
+			f.UpstreamLast = formatDate(upstreamDate)
+			f.UpstreamAgo = relativeTime(upstreamDate)
+		}
 	}
 
 	// Get branches
+	progress <- progressUpdate{repo: repo.Name, action: "fetching branches"}
 	branches, err := g.getBranches(repo.FullName)
 	if err == nil {
 		f.Branches = branches
 	}
 
-	// Get open PRs
-	prs, err := g.getOpenPRs(repo.FullName)
-	if err == nil {
-		f.OpenPRs = prs
+	// Get PRs and link to branches
+	if repo.Parent != nil {
+		progress <- progressUpdate{repo: repo.Name, action: "fetching PRs"}
+		prs, err := g.getPRsForFork(repo.FullName, repo.Parent.FullName)
+		if err == nil {
+			g.linkPRsToBranches(&f, prs)
+		}
 	}
 
-	// Determine if untouched
+	// Categorize the fork
 	nonDefaultBranches := 0
-	for _, b := range f.Branches {
+	hasOpenPR := false
+	for i := range f.Branches {
+		b := &f.Branches[i]
 		if !b.IsDefault {
 			nonDefaultBranches++
 		}
+		if b.PR != nil && b.PR.State == PRStateOpen {
+			hasOpenPR = true
+		}
 	}
-	f.Untouched = f.Ahead == 0 && nonDefaultBranches == 0 && f.OpenPRs == 0
+
+	// Determine category:
+	// - Maintained: ahead on default branch (you're keeping your own version)
+	// - Contribution: not ahead, but has branches/PRs (just for contributing)
+	// - Untouched: no changes at all
+	switch {
+	case f.Ahead > 0:
+		f.Category = CategoryMaintained
+	case nonDefaultBranches > 0 || hasOpenPR:
+		f.Category = CategoryContribution
+	default:
+		f.Category = CategoryUntouched
+	}
+	f.Untouched = f.Category == CategoryUntouched
 
 	return f, nil
 }
@@ -380,7 +692,6 @@ type comparison struct {
 }
 
 func (g *ghRunner) getComparison(forkFullName, parentFullName, branch string) (comparison, error) {
-	// Compare fork's default branch with upstream's default branch
 	endpoint := fmt.Sprintf("repos/%s/compare/%s:%s...%s:%s",
 		parentFullName,
 		strings.Split(parentFullName, "/")[0], branch,
@@ -400,15 +711,23 @@ func (g *ghRunner) getComparison(forkFullName, parentFullName, branch string) (c
 	return c, nil
 }
 
+func (g *ghRunner) getLastCommitDate(repoFullName, branch string) (string, error) {
+	// Get the last commit on the specified branch
+	endpoint := fmt.Sprintf("repos/%s/commits?sha=%s&per_page=1", repoFullName, branch)
+	out, err := g.run("api", endpoint, "--jq", ".[0].commit.committer.date")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 func (g *ghRunner) getBranches(repoFullName string) ([]Branch, error) {
-	// Get default branch first
 	defaultOut, err := g.run("api", fmt.Sprintf("repos/%s", repoFullName), "--jq", ".default_branch")
 	if err != nil {
 		return nil, err
 	}
 	defaultBranch := strings.TrimSpace(string(defaultOut))
 
-	// Get branches with commit info
 	out, err := g.run("api", fmt.Sprintf("repos/%s/branches", repoFullName))
 	if err != nil {
 		return nil, err
@@ -427,38 +746,137 @@ func (g *ghRunner) getBranches(repoFullName string) ([]Branch, error) {
 
 	var branches []Branch
 	for _, b := range rawBranches {
-		lastPush := ""
-		// Get commit date for non-default branches only (to reduce API calls)
+		branch := Branch{
+			Name:      b.Name,
+			IsDefault: b.Name == defaultBranch,
+		}
+
+		// Get commit date for non-default branches only
 		if b.Name != defaultBranch {
 			commitOut, err := g.run("api", fmt.Sprintf("repos/%s/commits/%s", repoFullName, b.Commit.SHA),
 				"--jq", ".commit.committer.date")
 			if err == nil {
-				lastPush = formatDate(strings.TrimSpace(string(commitOut)))
+				isoDate := strings.TrimSpace(string(commitOut))
+				branch.Date = formatDate(isoDate)
+				branch.DateAgo = relativeTime(isoDate)
 			}
 		}
 
-		branches = append(branches, Branch{
-			Name:      b.Name,
-			LastPush:  lastPush,
-			IsDefault: b.Name == defaultBranch,
-		})
+		branches = append(branches, branch)
 	}
 
 	return branches, nil
 }
 
-func (g *ghRunner) getOpenPRs(repoFullName string) (int, error) {
-	out, err := g.run("api", fmt.Sprintf("repos/%s/pulls?state=open", repoFullName), "--jq", "length")
+// ghPR represents a pull request from the GitHub API
+type ghPR struct {
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	State  string `json:"state"`
+	URL    string `json:"url"`
+	Head   struct {
+		Ref string `json:"ref"` // Branch name
+	} `json:"headRefName"`
+}
+
+func (g *ghRunner) getPRsForFork(forkFullName, parentFullName string) ([]ghPR, error) {
+	// Search for PRs from this fork to the parent repo
+	forkOwner := strings.Split(forkFullName, "/")[0]
+
+	// Use GraphQL search to find PRs authored by fork owner in parent repo
+	// This is much more efficient than fetching all PRs and filtering
+	searchQuery := fmt.Sprintf("is:pr repo:%s author:%s", parentFullName, forkOwner)
+
+	query := fmt.Sprintf(`query {
+		search(query: "%s", type: ISSUE, first: 100) {
+			nodes {
+				... on PullRequest {
+					number
+					title
+					state
+					url
+					headRefName
+				}
+			}
+		}
+	}`, searchQuery)
+
+	out, err := g.run("api", "graphql", "-f", fmt.Sprintf("query=%s", query))
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
-	var count int
-	if err := json.Unmarshal(out, &count); err != nil {
-		return 0, err
+	var result struct {
+		Data struct {
+			Search struct {
+				Nodes []struct {
+					Number      int    `json:"number"`
+					Title       string `json:"title"`
+					State       string `json:"state"`
+					URL         string `json:"url"`
+					HeadRefName string `json:"headRefName"`
+				} `json:"nodes"`
+			} `json:"search"`
+		} `json:"data"`
 	}
 
-	return count, nil
+	if err := json.Unmarshal(out, &result); err != nil {
+		return nil, err
+	}
+
+	var prs []ghPR
+	for _, pr := range result.Data.Search.Nodes {
+		if pr.Number == 0 {
+			continue // Skip empty nodes
+		}
+		prs = append(prs, ghPR{
+			Number: pr.Number,
+			Title:  pr.Title,
+			State:  pr.State,
+			URL:    pr.URL,
+			Head: struct {
+				Ref string `json:"ref"`
+			}{Ref: pr.HeadRefName},
+		})
+	}
+
+	return prs, nil
+}
+
+func (g *ghRunner) linkPRsToBranches(fork *Fork, prs []ghPR) {
+	// Create a map of branch name to PRs (use the most relevant PR)
+	branchPRs := make(map[string]*PR)
+
+	for i := range prs {
+		pr := &prs[i]
+		branchName := pr.Head.Ref
+
+		existing, exists := branchPRs[branchName]
+		// Prefer: Open > Merged > Closed
+		if !exists {
+			branchPRs[branchName] = &PR{
+				Number: pr.Number,
+				Title:  pr.Title,
+				State:  pr.State,
+				URL:    pr.URL,
+			}
+		} else if pr.State == PRStateOpen || (pr.State == PRStateMerged && existing.State == PRStateClosed) {
+			// Update if this PR is more relevant
+			branchPRs[branchName] = &PR{
+				Number: pr.Number,
+				Title:  pr.Title,
+				State:  pr.State,
+				URL:    pr.URL,
+			}
+		}
+	}
+
+	// Link PRs to branches
+	for i := range fork.Branches {
+		if pr, ok := branchPRs[fork.Branches[i].Name]; ok {
+			fork.Branches[i].PR = pr
+		}
+	}
 }
 
 func formatDate(isoDate string) string {
