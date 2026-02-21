@@ -46,7 +46,7 @@ func getCacheDir() (string, error) {
 		}
 		cacheHome = filepath.Join(home, ".cache")
 	}
-	return filepath.Join(cacheHome, "git-this-bread", "llm-advice"), nil
+	return filepath.Join(cacheHome, "git-this-bread", "git-explain", "llm-advice"), nil
 }
 
 // computeStateHash computes a hash of the repo state that affects advice
