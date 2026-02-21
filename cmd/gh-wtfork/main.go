@@ -22,6 +22,7 @@ var (
 	asProfile  string
 	showAll    bool
 	jsonOutput bool
+	noCache    bool
 )
 
 // Styles
@@ -120,6 +121,7 @@ func init() {
 	rootCmd.Flags().StringVar(&asProfile, "as", "", "Run as identity profile (managed by git-id)")
 	rootCmd.Flags().BoolVarP(&showAll, "all", "a", false, "Show all forks (default: hide untouched)")
 	rootCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output as JSON")
+	rootCmd.Flags().BoolVar(&noCache, "no-cache", false, "Bypass cache (still refreshes it)")
 }
 
 func main() {
@@ -780,11 +782,18 @@ type ghPR struct {
 }
 
 func (g *ghRunner) getPRsForFork(forkFullName, parentFullName string) ([]ghPR, error) {
+	// Load cached PRs (unless --no-cache)
+	var cache *PRCache
+	if !noCache {
+		cache, _ = loadPRCache(parentFullName)
+	} else {
+		cache = &PRCache{PRs: make(map[int]CachedPR)}
+	}
+
 	// Search for PRs from this fork to the parent repo
 	forkOwner := strings.Split(forkFullName, "/")[0]
 
 	// Use GraphQL search to find PRs authored by fork owner in parent repo
-	// This is much more efficient than fetching all PRs and filtering
 	searchQuery := fmt.Sprintf("is:pr repo:%s author:%s", parentFullName, forkOwner)
 
 	query := fmt.Sprintf(`query {
@@ -803,6 +812,22 @@ func (g *ghRunner) getPRsForFork(forkFullName, parentFullName string) ([]ghPR, e
 
 	out, err := g.run("api", "graphql", "-f", fmt.Sprintf("query=%s", query))
 	if err != nil {
+		// API failed - fall back to cache if available
+		if len(cache.PRs) > 0 {
+			var cachedPRs []ghPR
+			for _, cpr := range cache.PRs {
+				cachedPRs = append(cachedPRs, ghPR{
+					Number: cpr.Number,
+					Title:  cpr.Title,
+					State:  cpr.State,
+					URL:    cpr.URL,
+					Head: struct {
+						Ref string `json:"ref"`
+					}{Ref: cpr.Branch},
+				})
+			}
+			return cachedPRs, nil
+		}
 		return nil, err
 	}
 
@@ -839,6 +864,12 @@ func (g *ghRunner) getPRsForFork(forkFullName, parentFullName string) ([]ghPR, e
 			}{Ref: pr.HeadRefName},
 		})
 	}
+
+	// Merge with cached PRs (adds old merged/closed PRs not in search results)
+	prs = mergeCachedPRs(prs, cache)
+
+	// Save merged/closed PRs to cache for next time
+	_ = savePRCache(parentFullName, prs)
 
 	return prs, nil
 }
@@ -884,4 +915,137 @@ func formatDate(isoDate string) string {
 		return isoDate[:10]
 	}
 	return isoDate
+}
+
+// --- PR Cache ---
+// Caches merged/closed PRs to avoid re-fetching data that won't change.
+
+// CachedPR represents a PR stored in the cache
+type CachedPR struct {
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	State  string `json:"state"`
+	URL    string `json:"url"`
+	Branch string `json:"branch"`
+}
+
+// PRCache holds cached PRs for an upstream repo
+type PRCache struct {
+	PRs       map[int]CachedPR `json:"prs"` // keyed by PR number
+	UpdatedAt time.Time        `json:"updated_at"`
+}
+
+// getCacheDir returns the cache directory for gh-wtfork
+func getCacheDir() (string, error) {
+	cacheHome := os.Getenv("XDG_CACHE_HOME")
+	if cacheHome == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		cacheHome = filepath.Join(home, ".cache")
+	}
+	return filepath.Join(cacheHome, "git-this-bread", "gh-wtfork", "prs"), nil
+}
+
+// cacheFileName returns a safe filename for an upstream repo
+func cacheFileName(upstreamFullName string) string {
+	// Replace / with _ for safe filename
+	return strings.ReplaceAll(upstreamFullName, "/", "_") + ".json"
+}
+
+// loadPRCache loads cached PRs for an upstream repo
+func loadPRCache(upstreamFullName string) (*PRCache, error) {
+	cacheDir, err := getCacheDir()
+	if err != nil {
+		return nil, err
+	}
+
+	cachePath := filepath.Join(cacheDir, cacheFileName(upstreamFullName))
+	data, err := os.ReadFile(cachePath) //nolint:gosec // cachePath is constructed safely from repo name
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &PRCache{PRs: make(map[int]CachedPR)}, nil
+		}
+		return nil, err
+	}
+
+	var cache PRCache
+	if err := json.Unmarshal(data, &cache); err != nil {
+		// Corrupted cache, start fresh
+		return &PRCache{PRs: make(map[int]CachedPR)}, nil
+	}
+
+	if cache.PRs == nil {
+		cache.PRs = make(map[int]CachedPR)
+	}
+
+	return &cache, nil
+}
+
+// savePRCache saves PRs to the cache (only merged/closed)
+func savePRCache(upstreamFullName string, prs []ghPR) error {
+	cacheDir, err := getCacheDir()
+	if err != nil {
+		return err
+	}
+
+	// Ensure cache directory exists
+	if err := os.MkdirAll(cacheDir, 0o750); err != nil {
+		return err
+	}
+
+	// Load existing cache to preserve PRs we didn't fetch this time
+	cache, _ := loadPRCache(upstreamFullName)
+
+	// Add/update merged and closed PRs
+	for _, pr := range prs {
+		if pr.State == PRStateMerged || pr.State == PRStateClosed {
+			cache.PRs[pr.Number] = CachedPR{
+				Number: pr.Number,
+				Title:  pr.Title,
+				State:  pr.State,
+				URL:    pr.URL,
+				Branch: pr.Head.Ref,
+			}
+		}
+	}
+
+	cache.UpdatedAt = time.Now()
+
+	data, err := json.MarshalIndent(cache, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	cachePath := filepath.Join(cacheDir, cacheFileName(upstreamFullName))
+	return os.WriteFile(cachePath, data, 0o600)
+}
+
+// mergeCachedPRs merges cached PRs with freshly fetched PRs
+// Fresh data takes precedence (a cached "open" PR might now be "merged")
+func mergeCachedPRs(fresh []ghPR, cached *PRCache) []ghPR {
+	// Build a set of PR numbers we already have
+	seen := make(map[int]bool)
+	for _, pr := range fresh {
+		seen[pr.Number] = true
+	}
+
+	// Add cached PRs that weren't in fresh results
+	// (This can happen if the search API didn't return old merged PRs)
+	for _, cpr := range cached.PRs {
+		if !seen[cpr.Number] {
+			fresh = append(fresh, ghPR{
+				Number: cpr.Number,
+				Title:  cpr.Title,
+				State:  cpr.State,
+				URL:    cpr.URL,
+				Head: struct {
+					Ref string `json:"ref"`
+				}{Ref: cpr.Branch},
+			})
+		}
+	}
+
+	return fresh
 }
