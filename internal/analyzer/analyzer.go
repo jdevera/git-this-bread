@@ -97,16 +97,16 @@ type Options struct {
 }
 
 type DirtyDetails struct {
-	Untracked          int
-	UntrackedNames     []string
-	StagedFiles        int
-	StagedNames        []string
-	StagedInsertions   int
-	StagedDeletions    int
-	UnstagedFiles      int
-	UnstagedNames      []string
-	UnstagedInsertions int
-	UnstagedDeletions  int
+	Untracked          int      `json:"untracked,omitempty"`
+	UntrackedNames     []string `json:"untracked_names,omitempty"`
+	StagedFiles        int      `json:"staged,omitempty"`
+	StagedNames        []string `json:"staged_names,omitempty"`
+	StagedInsertions   int      `json:"staged_insertions,omitempty"`
+	StagedDeletions    int      `json:"staged_deletions,omitempty"`
+	UnstagedFiles      int      `json:"unstaged,omitempty"`
+	UnstagedNames      []string `json:"unstaged_names,omitempty"`
+	UnstagedInsertions int      `json:"unstaged_insertions,omitempty"`
+	UnstagedDeletions  int      `json:"unstaged_deletions,omitempty"`
 }
 
 func (d *DirtyDetails) TotalFiles() int {
@@ -128,53 +128,63 @@ func (d *DirtyDetails) String() string {
 }
 
 type BranchInfo struct {
-	Name           string
-	IsCurrent      bool
-	CommitCount    int
-	LastCommitDate string
+	Name           string `json:"name"`
+	IsCurrent      bool   `json:"is_current"`
+	CommitCount    int    `json:"commit_count"`
+	LastCommitDate string `json:"last_commit_date,omitempty"`
 }
 
 type StashInfo struct {
-	Index   int
-	Message string
-	Date    string
+	Index   int    `json:"index"`
+	Message string `json:"message"`
+	Date    string `json:"date,omitempty"`
 }
 
 type CommitInfo struct {
-	Hash    string
-	Message string
-	Date    string
+	Hash    string `json:"hash"`
+	Message string `json:"message"`
+	Date    string `json:"date,omitempty"`
 }
 
 type RemoteInfo struct {
-	Name   string
-	URL    string
-	IsMine bool
+	Name   string `json:"name"`
+	URL    string `json:"url"`
+	IsMine bool   `json:"is_mine"`
+}
+
+// CommitStats holds commit statistics for JSON output.
+type CommitStats struct {
+	UserTotal      int    `json:"user_total"`
+	LastUserCommit string `json:"last_user_commit,omitempty"`
+	LastRepoCommit string `json:"last_repo_commit,omitempty"`
 }
 
 type RepoInfo struct {
-	Path                  string
-	Name                  string
-	IsGitRepo             bool
-	HasUserRemote         bool
-	UserRemotes           []string
-	AllRemotes            []RemoteInfo
-	BranchesWithCommits   []BranchInfo
-	TotalUserCommits      int
-	LastCommitDate        string // Last commit by user
-	LastRepoCommitDate    string // Last commit by anyone
-	HasUncommittedChanges bool
-	DirtyDetails          *DirtyDetails
-	CurrentBranch         string
-	DefaultBranch         string
-	Ahead                 int
-	Behind                int
-	StashCount            int
-	Stashes               []StashInfo
-	RecentCommits         []CommitInfo // Recent commits on current branch
-	IsFork                bool
-	UpstreamURL           string
-	Error                 string
+	Path          string        `json:"path"`
+	Name          string        `json:"name"`
+	IsGitRepo     bool          `json:"is_git_repo"`
+	Error         string        `json:"error,omitempty"`
+	CurrentBranch string        `json:"current_branch,omitempty"`
+	DefaultBranch string        `json:"default_branch,omitempty"`
+	IsFork        bool          `json:"is_fork,omitempty"`
+	UpstreamURL   string        `json:"upstream_url,omitempty"`
+	Commits       *CommitStats  `json:"commits,omitempty"`
+	DirtyDetails  *DirtyDetails `json:"dirty,omitempty"`
+	Ahead         int           `json:"ahead,omitempty"`
+	Behind        int           `json:"behind,omitempty"`
+	StashCount    int           `json:"stash_count,omitempty"`
+	Stashes       []StashInfo   `json:"stashes,omitempty"`
+	RecentCommits []CommitInfo  `json:"recent_commits,omitempty"`
+	AllRemotes    []RemoteInfo  `json:"remotes,omitempty"`
+	BranchesWithCommits []BranchInfo `json:"branches,omitempty"`
+
+	// Internal/render-only fields excluded from JSON output:
+	HasUserRemote         bool     `json:"-"`
+	UserRemotes           []string `json:"-"`
+	HasUncommittedChanges bool     `json:"-"`
+	TotalUserCommits      int      `json:"-"`
+	LastCommitDate        string   `json:"-"` // Last commit by user
+	LastRepoCommitDate    string   `json:"-"` // Last commit by anyone
 }
 
 func IsGitRepo(path string) bool {
@@ -280,6 +290,11 @@ func AnalyzeRepo(path string, opts Options) RepoInfo {
 	info.TotalUserCommits = userCount
 	info.LastCommitDate = lastUserDate
 	info.LastRepoCommitDate = lastRepoDate
+	info.Commits = &CommitStats{
+		UserTotal:      userCount,
+		LastUserCommit: lastUserDate,
+		LastRepoCommit: lastRepoDate,
+	}
 
 	// Branches with user commits (only in verbose mode)
 	if opts.Verbose {

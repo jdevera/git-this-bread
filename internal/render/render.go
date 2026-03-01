@@ -55,7 +55,7 @@ type Options struct {
 
 func RenderRepo(info *analyzer.RepoInfo, opts Options) {
 	if opts.UseJSON {
-		data, _ := json.MarshalIndent(toMap(info), "", "  ")
+		data, _ := json.MarshalIndent(info, "", "  ")
 		fmt.Println(string(data))
 		return
 	}
@@ -493,11 +493,7 @@ func RenderTable(repos []analyzer.RepoInfo) {
 }
 
 func RenderJSON(repos []analyzer.RepoInfo) {
-	var data []map[string]interface{}
-	for i := range repos {
-		data = append(data, toMap(&repos[i]))
-	}
-	out, _ := json.MarshalIndent(data, "", "  ")
+	out, _ := json.MarshalIndent(repos, "", "  ")
 	fmt.Println(string(out))
 }
 
@@ -556,51 +552,6 @@ func GetAdvice(info *analyzer.RepoInfo) []string {
 	}
 
 	return advice
-}
-
-func toMap(info *analyzer.RepoInfo) map[string]interface{} {
-	m := map[string]interface{}{
-		"name":        info.Name,
-		"path":        info.Path,
-		"is_git_repo": info.IsGitRepo,
-	}
-	if !info.IsGitRepo {
-		return m
-	}
-	if info.Error != "" {
-		m["error"] = info.Error
-		return m
-	}
-
-	m["current_branch"] = info.CurrentBranch
-	m["default_branch"] = info.DefaultBranch
-	m["is_fork"] = info.IsFork
-	m["commits"] = map[string]interface{}{
-		"user_total":       info.TotalUserCommits,
-		"last_user_commit": info.LastCommitDate,
-		"last_repo_commit": info.LastRepoCommitDate,
-	}
-	if info.DirtyDetails != nil {
-		m["dirty"] = map[string]interface{}{
-			"staged":    info.DirtyDetails.StagedFiles,
-			"unstaged":  info.DirtyDetails.UnstagedFiles,
-			"untracked": info.DirtyDetails.Untracked,
-		}
-	}
-	m["ahead"] = info.Ahead
-	m["stash_count"] = info.StashCount
-
-	var remotes []map[string]interface{}
-	for _, r := range info.AllRemotes {
-		remotes = append(remotes, map[string]interface{}{
-			"name":    r.Name,
-			"url":     r.URL,
-			"is_mine": r.IsMine,
-		})
-	}
-	m["remotes"] = remotes
-
-	return m
 }
 
 // lipgloss handles NO_COLOR automatically via termenv

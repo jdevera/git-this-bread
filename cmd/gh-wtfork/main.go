@@ -13,16 +13,18 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/invopop/jsonschema"
 	"github.com/spf13/cobra"
 
 	"github.com/jdevera/git-this-bread/internal/identity"
 )
 
 var (
-	asProfile  string
-	showAll    bool
-	jsonOutput bool
-	noCache    bool
+	asProfile   string
+	showAll     bool
+	jsonOutput  bool
+	showSchema  bool
+	noCache     bool
 )
 
 // Styles
@@ -121,6 +123,7 @@ func init() {
 	rootCmd.Flags().StringVar(&asProfile, "as", "", "Run as identity profile (managed by git-id)")
 	rootCmd.Flags().BoolVarP(&showAll, "all", "a", false, "Show all forks (default: hide untouched)")
 	rootCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output as JSON")
+	rootCmd.Flags().BoolVar(&showSchema, "schema", false, "Output JSON schema for the JSON output format and exit")
 	rootCmd.Flags().BoolVar(&noCache, "no-cache", false, "Bypass cache (still refreshes it)")
 }
 
@@ -138,6 +141,14 @@ type progressUpdate struct {
 }
 
 func run(cmd *cobra.Command, args []string) error {
+	if showSchema {
+		r := jsonschema.Reflector{}
+		schema := r.Reflect(&[]Fork{})
+		out, _ := json.MarshalIndent(schema, "", "  ")
+		fmt.Println(string(out))
+		return nil
+	}
+
 	ghCmd := &ghRunner{profile: asProfile}
 	defer ghCmd.cleanup()
 

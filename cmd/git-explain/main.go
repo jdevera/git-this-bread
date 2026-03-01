@@ -1,10 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/invopop/jsonschema"
 	"github.com/spf13/cobra"
 
 	"github.com/jdevera/git-this-bread/internal/analyzer"
@@ -21,6 +23,7 @@ var (
 	quiet           bool
 	showAdvice      bool
 	useJSON         bool
+	showSchema      bool
 	llmAdvice       bool
 	llmProvider     string
 	llmInstructions string
@@ -66,6 +69,7 @@ func init() {
 	rootCmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Suppress progress bar")
 	rootCmd.Flags().BoolVar(&showAdvice, "advice", false, "Show actionable advice for each repo")
 	rootCmd.Flags().BoolVar(&useJSON, "json", false, "Output as JSON")
+	rootCmd.Flags().BoolVar(&showSchema, "schema", false, "Output JSON schema for the JSON output format and exit")
 	rootCmd.Flags().BoolVar(&llmAdvice, "llm-advice", false, "Enable LLM-powered advice (requires API key in env)")
 	rootCmd.Flags().StringVar(&llmProvider, "llm-provider", "openai", "LLM provider: openai, anthropic")
 	rootCmd.Flags().StringVar(&llmInstructions, "llm-instructions", "", "Custom instructions for the LLM (e.g., persona or style)")
@@ -75,6 +79,14 @@ func init() {
 }
 
 func runExplain(cmd *cobra.Command, args []string) error {
+	if showSchema {
+		r := jsonschema.Reflector{}
+		schema := r.Reflect(&[]analyzer.RepoInfo{})
+		out, _ := json.MarshalIndent(schema, "", "  ")
+		fmt.Println(string(out))
+		return nil
+	}
+
 	if showLegend {
 		render.PrintLegend()
 		return nil

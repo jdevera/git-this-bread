@@ -129,25 +129,28 @@ func TestGetAdvice(t *testing.T) {
 	}
 }
 
-func TestToMap(t *testing.T) {
-	t.Run("non-git repo", func(t *testing.T) {
+func TestRepoInfoJSON(t *testing.T) {
+	t.Run("non-git repo omits git fields", func(t *testing.T) {
 		info := &analyzer.RepoInfo{
 			Name:      "test-repo",
 			Path:      "/path/to/repo",
 			IsGitRepo: false,
 		}
 
-		m := toMap(info)
+		data, err := json.Marshal(info)
+		require.NoError(t, err)
+		var m map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &m))
 
 		assert.Equal(t, "test-repo", m["name"])
 		assert.Equal(t, "/path/to/repo", m["path"])
 		assert.Equal(t, false, m["is_git_repo"])
-		// Should not have git-specific fields
+		// commits is omitempty (nil pointer), should not appear
 		_, hasCommits := m["commits"]
 		assert.False(t, hasCommits)
 	})
 
-	t.Run("repo with error", func(t *testing.T) {
+	t.Run("repo with error includes error field", func(t *testing.T) {
 		info := &analyzer.RepoInfo{
 			Name:      "test-repo",
 			Path:      "/path/to/repo",
@@ -155,24 +158,29 @@ func TestToMap(t *testing.T) {
 			Error:     "some error",
 		}
 
-		m := toMap(info)
+		data, err := json.Marshal(info)
+		require.NoError(t, err)
+		var m map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &m))
 
 		assert.Equal(t, "some error", m["error"])
 	})
 
-	t.Run("full git repo", func(t *testing.T) {
+	t.Run("full git repo has all fields", func(t *testing.T) {
 		info := &analyzer.RepoInfo{
-			Name:               "test-repo",
-			Path:               "/path/to/repo",
-			IsGitRepo:          true,
-			CurrentBranch:      "main",
-			DefaultBranch:      "main",
-			IsFork:             true,
-			TotalUserCommits:   42,
-			LastCommitDate:     "2024-01-15",
-			LastRepoCommitDate: "2024-01-20",
-			Ahead:              3,
-			StashCount:         1,
+			Name:          "test-repo",
+			Path:          "/path/to/repo",
+			IsGitRepo:     true,
+			CurrentBranch: "main",
+			DefaultBranch: "main",
+			IsFork:        true,
+			Ahead:         3,
+			StashCount:    1,
+			Commits: &analyzer.CommitStats{
+				UserTotal:      42,
+				LastUserCommit: "2024-01-15",
+				LastRepoCommit: "2024-01-20",
+			},
 			DirtyDetails: &analyzer.DirtyDetails{
 				StagedFiles:   2,
 				UnstagedFiles: 3,
@@ -184,31 +192,35 @@ func TestToMap(t *testing.T) {
 			},
 		}
 
-		m := toMap(info)
+		data, err := json.Marshal(info)
+		require.NoError(t, err)
+		var m map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &m))
 
 		assert.Equal(t, "main", m["current_branch"])
 		assert.Equal(t, "main", m["default_branch"])
 		assert.Equal(t, true, m["is_fork"])
-		assert.Equal(t, 3, m["ahead"])
-		assert.Equal(t, 1, m["stash_count"])
+		assert.Equal(t, float64(3), m["ahead"])
+		assert.Equal(t, float64(1), m["stash_count"])
 
 		commits := m["commits"].(map[string]interface{})
-		assert.Equal(t, 42, commits["user_total"])
+		assert.Equal(t, float64(42), commits["user_total"])
 		assert.Equal(t, "2024-01-15", commits["last_user_commit"])
 		assert.Equal(t, "2024-01-20", commits["last_repo_commit"])
 
 		dirty := m["dirty"].(map[string]interface{})
-		assert.Equal(t, 2, dirty["staged"])
-		assert.Equal(t, 3, dirty["unstaged"])
-		assert.Equal(t, 1, dirty["untracked"])
+		assert.Equal(t, float64(2), dirty["staged"])
+		assert.Equal(t, float64(3), dirty["unstaged"])
+		assert.Equal(t, float64(1), dirty["untracked"])
 
-		remotes := m["remotes"].([]map[string]interface{})
+		remotes := m["remotes"].([]interface{})
 		assert.Len(t, remotes, 2)
-		assert.Equal(t, "origin", remotes[0]["name"])
-		assert.Equal(t, true, remotes[0]["is_mine"])
+		r0 := remotes[0].(map[string]interface{})
+		assert.Equal(t, "origin", r0["name"])
+		assert.Equal(t, true, r0["is_mine"])
 	})
 
-	t.Run("no dirty details when clean", func(t *testing.T) {
+	t.Run("no dirty field when clean", func(t *testing.T) {
 		info := &analyzer.RepoInfo{
 			Name:          "test-repo",
 			Path:          "/path/to/repo",
@@ -217,10 +229,41 @@ func TestToMap(t *testing.T) {
 			DirtyDetails:  nil,
 		}
 
-		m := toMap(info)
+		data, err := json.Marshal(info)
+		require.NoError(t, err)
+		var m map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &m))
 
 		_, hasDirty := m["dirty"]
 		assert.False(t, hasDirty)
+	})
+
+	t.Run("internal fields excluded from JSON", func(t *testing.T) {
+		info := &analyzer.RepoInfo{
+			Name:                  "test-repo",
+			Path:                  "/path/to/repo",
+			IsGitRepo:             true,
+			HasUserRemote:         true,
+			UserRemotes:           []string{"origin"},
+			HasUncommittedChanges: true,
+			TotalUserCommits:      5,
+			LastCommitDate:        "2024-01-01",
+			LastRepoCommitDate:    "2024-01-02",
+		}
+
+		data, err := json.Marshal(info)
+		require.NoError(t, err)
+		var m map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &m))
+
+		_, hasUserRemote := m["has_user_remote"]
+		assert.False(t, hasUserRemote)
+		_, hasUserRemotes := m["user_remotes"]
+		assert.False(t, hasUserRemotes)
+		_, hasUncommitted := m["has_uncommitted_changes"]
+		assert.False(t, hasUncommitted)
+		_, hasTotalCommits := m["total_user_commits"]
+		assert.False(t, hasTotalCommits)
 	})
 }
 
