@@ -296,3 +296,41 @@ func TestProfileWithTestRepo(t *testing.T) {
 	// primarily works with global config, but this demonstrates the
 	// git config mechanics work correctly.
 }
+
+func TestIncludedConfigFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	setEnv(t, "HOME", tmpDir)
+
+	// Write identity config to a separate file
+	identitiesFile := filepath.Join(tmpDir, ".git-identities")
+	identitiesContent := `[identity "included"]
+	email = included@example.com
+	sshkey = ~/.ssh/id_included
+	user = Included User
+	ghuser = includeduser
+`
+	require.NoError(t, os.WriteFile(identitiesFile, []byte(identitiesContent), 0o600))
+
+	// Main gitconfig includes the separate file
+	gitconfig := filepath.Join(tmpDir, ".gitconfig")
+	gitconfigContent := "[include]\n\tpath = " + identitiesFile + "\n"
+	require.NoError(t, os.WriteFile(gitconfig, []byte(gitconfigContent), 0o600))
+
+	// List should find the included profile
+	names, err := List()
+	require.NoError(t, err)
+	assert.Contains(t, names, "included")
+
+	// Get should read all fields
+	p, err := Get("included")
+	require.NoError(t, err)
+	assert.Equal(t, "included@example.com", p.Email)
+	assert.Equal(t, "~/.ssh/id_included", p.SSHKey)
+	assert.Equal(t, "Included User", p.User)
+	assert.Equal(t, "includeduser", p.GHUser)
+
+	// GetSourceFile should point to the included file
+	source, err := GetSourceFile("included")
+	require.NoError(t, err)
+	assert.Equal(t, identitiesFile, source)
+}

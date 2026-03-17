@@ -24,7 +24,7 @@ var profileKeys = []string{"sshkey", "email", "user", "ghuser"}
 
 // List returns all profile names from git config.
 func List() ([]string, error) {
-	cmd := exec.Command("git", "config", "--global", "--get-regexp", `^identity\.`)
+	cmd := exec.Command("git", "config", "--get-regexp", `^identity\.`)
 	out, err := cmd.Output()
 	if err != nil {
 		// No matches is not an error - just empty
@@ -90,7 +90,7 @@ func Get(name string) (*Profile, error) {
 // getConfigValue reads a single config value.
 func getConfigValue(profile, key string) (string, error) {
 	configKey := fmt.Sprintf("identity.%s.%s", profile, key)
-	cmd := exec.Command("git", "config", "--global", "--get", configKey)
+	cmd := exec.Command("git", "config", "--get", configKey)
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err
@@ -103,7 +103,7 @@ func GetSourceFile(name string) (string, error) {
 	// Try to find any key for this profile
 	for _, key := range profileKeys {
 		configKey := fmt.Sprintf("identity.%s.%s", name, key)
-		cmd := exec.Command("git", "config", "--global", "--show-origin", "--get", configKey)
+		cmd := exec.Command("git", "config", "--show-origin", "--get", configKey)
 		out, err := cmd.Output()
 		if err != nil {
 			continue
@@ -127,7 +127,7 @@ func GetAllSourceFiles(name string) ([]string, error) {
 
 	for _, key := range profileKeys {
 		configKey := fmt.Sprintf("identity.%s.%s", name, key)
-		cmd := exec.Command("git", "config", "--global", "--show-origin", "--get-all", configKey)
+		cmd := exec.Command("git", "config", "--show-origin", "--get-all", configKey)
 		out, err := cmd.Output()
 		if err != nil {
 			continue
