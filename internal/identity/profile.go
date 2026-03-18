@@ -12,15 +12,25 @@ import (
 
 // Profile represents a git/GitHub identity profile.
 type Profile struct {
-	Name   string // Profile name (e.g., "personal", "work")
-	SSHKey string // Path to SSH private key (required for git-as)
-	Email  string // Git author/committer email (required for git-as)
-	User   string // Git author/committer name (optional)
-	GHUser string // GitHub username for gh-as (optional)
+	Name        string // Profile name (e.g., "personal", "work")
+	DisplayName string // Display name for git commits (optional, overrides User)
+	SSHKey      string // Path to SSH private key (required for git-as)
+	Email       string // Git author/committer email (required for git-as)
+	User        string // Git author/committer name (optional)
+	GHUser      string // GitHub username for gh-as (optional)
 }
 
 // profileKeys are the git config keys used for profile fields.
-var profileKeys = []string{"sshkey", "email", "user", "ghuser"}
+var profileKeys = []string{"name", "sshkey", "email", "user", "ghuser"}
+
+// CommitName returns the name to use for git commits.
+// Prefers DisplayName, falls back to User.
+func (p *Profile) CommitName() string {
+	if p.DisplayName != "" {
+		return p.DisplayName
+	}
+	return p.User
+}
 
 // List returns all profile names from git config.
 func List() ([]string, error) {
@@ -66,6 +76,9 @@ func Get(name string) (*Profile, error) {
 	p := &Profile{Name: name}
 
 	// Read each field
+	if val, err := getConfigValue(name, "name"); err == nil {
+		p.DisplayName = val
+	}
 	if val, err := getConfigValue(name, "sshkey"); err == nil {
 		p.SSHKey = val
 	}
@@ -80,7 +93,7 @@ func Get(name string) (*Profile, error) {
 	}
 
 	// Check if profile exists (has at least one field)
-	if p.SSHKey == "" && p.Email == "" && p.User == "" && p.GHUser == "" {
+	if p.DisplayName == "" && p.SSHKey == "" && p.Email == "" && p.User == "" && p.GHUser == "" {
 		return nil, fmt.Errorf("profile %q not found", name)
 	}
 
@@ -187,6 +200,11 @@ func Set(p *Profile, opts SetOptions) (string, error) {
 	}
 
 	// Write each field
+	if p.DisplayName != "" {
+		if err := setConfigValue(targetFile, p.Name, "name", p.DisplayName); err != nil {
+			return targetFile, err
+		}
+	}
 	if p.SSHKey != "" {
 		if err := setConfigValue(targetFile, p.Name, "sshkey", p.SSHKey); err != nil {
 			return targetFile, err
@@ -251,6 +269,9 @@ func verifyWrite(file string, p *Profile) error {
 		return nil
 	}
 
+	if err := check("name", p.DisplayName); err != nil {
+		return err
+	}
 	if err := check("sshkey", p.SSHKey); err != nil {
 		return err
 	}
@@ -276,6 +297,9 @@ func verifyEffective(p *Profile) error {
 		return nil
 	}
 
+	if err := check("name", p.DisplayName); err != nil {
+		return err
+	}
 	if err := check("sshkey", p.SSHKey); err != nil {
 		return err
 	}
@@ -329,7 +353,7 @@ func DefaultConfigFile() string {
 // SetField sets a single field on an existing profile.
 func SetField(name, key, value string, opts SetOptions) (string, error) {
 	// Validate key
-	validKeys := map[string]bool{"sshkey": true, "email": true, "user": true, "ghuser": true}
+	validKeys := map[string]bool{"name": true, "sshkey": true, "email": true, "user": true, "ghuser": true}
 	if !validKeys[key] {
 		return "", fmt.Errorf("invalid key %q, must be one of: sshkey, email, user, ghuser", key)
 	}

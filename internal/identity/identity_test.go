@@ -297,6 +297,59 @@ func TestProfileWithTestRepo(t *testing.T) {
 	// git config mechanics work correctly.
 }
 
+func TestDisplayName(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, ".gitconfig")
+	require.NoError(t, os.WriteFile(configFile, []byte(""), 0o600))
+	setEnv(t, "HOME", tmpDir)
+
+	t.Run("set and get", func(t *testing.T) {
+		p := &Profile{
+			Name:        "withname",
+			DisplayName: "Alice Smith",
+			Email:       "alice@example.com",
+			User:        "alice123",
+		}
+		_, err := Set(p, SetOptions{Detached: true})
+		require.NoError(t, err)
+
+		got, err := Get("withname")
+		require.NoError(t, err)
+		assert.Equal(t, "Alice Smith", got.DisplayName)
+		assert.Equal(t, "alice123", got.User)
+	})
+
+	t.Run("CommitName prefers DisplayName", func(t *testing.T) {
+		p := &Profile{DisplayName: "Alice Smith", User: "alice123"}
+		assert.Equal(t, "Alice Smith", p.CommitName())
+	})
+
+	t.Run("CommitName falls back to User", func(t *testing.T) {
+		p := &Profile{User: "alice123"}
+		assert.Equal(t, "alice123", p.CommitName())
+	})
+
+	t.Run("CommitName empty when both unset", func(t *testing.T) {
+		p := &Profile{}
+		assert.Equal(t, "", p.CommitName())
+	})
+
+	t.Run("SetField with name key", func(t *testing.T) {
+		// Create a profile first
+		p := &Profile{Name: "nametest", Email: "name@example.com"}
+		_, err := Set(p, SetOptions{Detached: true})
+		require.NoError(t, err)
+
+		// Set name via SetField
+		_, err = SetField("nametest", "name", "New Display Name", SetOptions{Detached: true})
+		require.NoError(t, err)
+
+		got, err := Get("nametest")
+		require.NoError(t, err)
+		assert.Equal(t, "New Display Name", got.DisplayName)
+	})
+}
+
 func TestIncludedConfigFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	setEnv(t, "HOME", tmpDir)

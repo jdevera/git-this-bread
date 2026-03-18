@@ -26,6 +26,7 @@ Manage git/GitHub identity profiles stored in git config.
 
 Profiles are stored as [identity.<name>] sections in your git config.
 Each profile can have:
+  - name:   Display name for git commits (optional, overrides user)
   - sshkey: Path to SSH private key (required for git-as)
   - email:  Git author/committer email (required for git-as)
   - user:   Git author/committer name (optional)
@@ -103,6 +104,12 @@ var showCmd = &cobra.Command{
 			fmt.Printf("Source:  %s\n", source)
 		}
 		fmt.Println()
+
+		if profile.DisplayName != "" {
+			fmt.Printf("  name:   %s\n", profile.DisplayName)
+		} else {
+			fmt.Println("  name:   (not set)")
+		}
 
 		if profile.SSHKey != "" {
 			// Validate SSH key
@@ -182,6 +189,12 @@ var addCmd = &cobra.Command{
 		}
 		profile.Email = email
 
+		// Display name (optional)
+		fmt.Print("Display name for commits (optional): ")
+		displayName, _ := reader.ReadString('\n')
+		displayName = strings.TrimSpace(displayName)
+		profile.DisplayName = displayName
+
 		// User name (optional)
 		fmt.Print("User name (optional): ")
 		user, _ := reader.ReadString('\n')
@@ -246,7 +259,7 @@ var setCmd = &cobra.Command{
 	Short: "Set a profile field",
 	Long: `Set a single field on an existing profile.
 
-Valid keys: sshkey, email, user, ghuser
+Valid keys: name, sshkey, email, user, ghuser
 
 Examples:
   git-id set personal email newemail@example.com

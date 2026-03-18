@@ -75,10 +75,10 @@ func run(cmd *cobra.Command, args []string) error {
 		fmt.Sprintf("GIT_COMMITTER_EMAIL=%s", profile.Email),
 	)
 
-	if profile.User != "" {
+	if commitName := profile.CommitName(); commitName != "" {
 		env = append(env,
-			fmt.Sprintf("GIT_AUTHOR_NAME=%s", profile.User),
-			fmt.Sprintf("GIT_COMMITTER_NAME=%s", profile.User),
+			fmt.Sprintf("GIT_AUTHOR_NAME=%s", commitName),
+			fmt.Sprintf("GIT_COMMITTER_NAME=%s", commitName),
 		)
 	}
 
