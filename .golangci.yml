@@ -1,77 +1,77 @@
-# golangci-lint configuration
-# https://golangci-lint.run/usage/configuration/
-
+version: "2"
 run:
-  timeout: 5m
   go: "1.22"
-
 linters:
-  disable-all: true
+  default: none
   enable:
-    # Default linters
-    - errcheck      # unchecked errors
-    - gosimple      # simplifications
-    - govet         # suspicious constructs
-    - ineffassign   # unused assignments
-    - staticcheck   # static analysis
-    - unused        # unused code
-
-    # Additional linters
-    - gofmt         # formatting
-    - goimports     # import ordering
-    - misspell      # spelling in comments
-    - gocritic      # opinionated checks
-    - revive        # extensible linter (golint successor)
-    - unconvert     # unnecessary conversions
-    - unparam       # unused parameters
-    - gosec         # security issues
-
-linters-settings:
-  gofmt:
-    simplify: true
-
-  goimports:
-    local-prefixes: github.com/jdevera/git-this-bread
-
-  misspell:
-    locale: US
-
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - style
-      - performance
-
-  revive:
-    rules:
-      - name: blank-imports
-      - name: context-as-argument
-      - name: context-keys-type
-      - name: dot-imports
-      - name: error-return
-      - name: error-strings
-      - name: error-naming
-      # - name: exported  # Too strict for small CLI tools
-      - name: increment-decrement
-      - name: indent-error-flow
-      - name: range
-      - name: receiver-naming
-      - name: time-naming
-      - name: unexported-return
-      - name: var-declaration
-      - name: var-naming
-
-  gosec:
-    excludes:
-      - G104  # Audit errors not checked (covered by errcheck)
-      - G204  # Subprocess with variable - false positive for intentional git CLI usage
-
+    - errcheck
+    - gocritic
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - revive
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+  settings:
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+    gosec:
+      excludes:
+        - G104 # duplicate of errcheck
+        - G204 # every tool in this repo intentionally shells out to git/gh
+    misspell:
+      locale: US
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: var-declaration
+        - name: var-naming
+  exclusions:
+    generated: lax
+    paths:
+      - .*_generated\.go$
+      - vendor
+      - testdata
+      - third_party$
+      - builtin$
+      - examples$
 issues:
-  exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
-  exclude-dirs:
-    - vendor
-    - testdata
-  exclude-files:
-    - ".*_generated\\.go$"
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    gofmt:
+      simplify: true
+    goimports:
+      local-prefixes:
+        - github.com/jdevera/git-this-bread
+  exclusions:
+    generated: lax
+    paths:
+      - .*_generated\.go$
+      - vendor
+      - testdata
+      - third_party$
+      - builtin$
+      - examples$

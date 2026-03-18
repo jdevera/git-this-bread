@@ -20,11 +20,11 @@ import (
 )
 
 var (
-	asProfile   string
-	showAll     bool
-	jsonOutput  bool
-	showSchema  bool
-	noCache     bool
+	asProfile  string
+	showAll    bool
+	jsonOutput bool
+	showSchema bool
+	noCache    bool
 )
 
 // Styles
@@ -529,7 +529,7 @@ func (g *ghRunner) setupIdentity() error {
 	}
 
 	realConfig := filepath.Join(realConfigDir, "config.yml")
-	if _, err := os.Stat(realConfig); err == nil {
+	if _, err := os.Stat(realConfig); err == nil { // #nosec G703 -- path built from known config dirs, not user input
 		_ = os.Symlink(realConfig, filepath.Join(tmpDir, "config.yml"))
 	}
 

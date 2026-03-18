@@ -160,23 +160,23 @@ type CommitStats struct {
 }
 
 type RepoInfo struct {
-	Path          string        `json:"path"`
-	Name          string        `json:"name"`
-	IsGitRepo     bool          `json:"is_git_repo"`
-	Error         string        `json:"error,omitempty"`
-	CurrentBranch string        `json:"current_branch,omitempty"`
-	DefaultBranch string        `json:"default_branch,omitempty"`
-	IsFork        bool          `json:"is_fork,omitempty"`
-	UpstreamURL   string        `json:"upstream_url,omitempty"`
-	Commits       *CommitStats  `json:"commits,omitempty"`
-	DirtyDetails  *DirtyDetails `json:"dirty,omitempty"`
-	Ahead         int           `json:"ahead,omitempty"`
-	Behind        int           `json:"behind,omitempty"`
-	StashCount    int           `json:"stash_count,omitempty"`
-	Stashes       []StashInfo   `json:"stashes,omitempty"`
-	RecentCommits []CommitInfo  `json:"recent_commits,omitempty"`
-	AllRemotes    []RemoteInfo  `json:"remotes,omitempty"`
-	BranchesWithCommits []BranchInfo `json:"branches,omitempty"`
+	Path                string        `json:"path"`
+	Name                string        `json:"name"`
+	IsGitRepo           bool          `json:"is_git_repo"`
+	Error               string        `json:"error,omitempty"`
+	CurrentBranch       string        `json:"current_branch,omitempty"`
+	DefaultBranch       string        `json:"default_branch,omitempty"`
+	IsFork              bool          `json:"is_fork,omitempty"`
+	UpstreamURL         string        `json:"upstream_url,omitempty"`
+	Commits             *CommitStats  `json:"commits,omitempty"`
+	DirtyDetails        *DirtyDetails `json:"dirty,omitempty"`
+	Ahead               int           `json:"ahead,omitempty"`
+	Behind              int           `json:"behind,omitempty"`
+	StashCount          int           `json:"stash_count,omitempty"`
+	Stashes             []StashInfo   `json:"stashes,omitempty"`
+	RecentCommits       []CommitInfo  `json:"recent_commits,omitempty"`
+	AllRemotes          []RemoteInfo  `json:"remotes,omitempty"`
+	BranchesWithCommits []BranchInfo  `json:"branches,omitempty"`
 
 	// Internal/render-only fields excluded from JSON output:
 	HasUserRemote         bool     `json:"-"`

@@ -162,14 +162,14 @@ func TestCacheDir(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", "/custom/cache")
 	dir, err := getCacheDir()
 	require.NoError(t, err)
-	assert.Equal(t, "/custom/cache/git-this-bread/llm-advice", dir)
+	assert.Equal(t, "/custom/cache/git-this-bread/git-explain/llm-advice", dir)
 
 	// Test with XDG_CACHE_HOME unset (falls back to ~/.cache)
 	t.Setenv("XDG_CACHE_HOME", "")
 	dir, err = getCacheDir()
 	require.NoError(t, err)
 	home, _ := os.UserHomeDir()
-	expected := filepath.Join(home, ".cache", "git-this-bread", "llm-advice")
+	expected := filepath.Join(home, ".cache", "git-this-bread", "git-explain", "llm-advice")
 	assert.Equal(t, expected, dir)
 }
 
