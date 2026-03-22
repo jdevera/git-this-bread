@@ -1,9 +1,12 @@
 # Binaries (at root only)
 /git-*
+!/git-this-bread.spec
 *.exe
 
 # Build output
 /dist/
+/rpmbuild/
+/vendor/
 
 # Test binary, built with `go test -c`
 *.test
