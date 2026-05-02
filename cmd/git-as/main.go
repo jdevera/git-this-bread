@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -68,19 +69,7 @@ func run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Build environment with identity overrides
-	env := append(os.Environ(),
-		fmt.Sprintf("GIT_SSH_COMMAND=ssh -i %s -o IdentitiesOnly=yes", expandedKey),
-		fmt.Sprintf("GIT_AUTHOR_EMAIL=%s", profile.Email),
-		fmt.Sprintf("GIT_COMMITTER_EMAIL=%s", profile.Email),
-	)
-
-	if commitName := profile.CommitName(); commitName != "" {
-		env = append(env,
-			fmt.Sprintf("GIT_AUTHOR_NAME=%s", commitName),
-			fmt.Sprintf("GIT_COMMITTER_NAME=%s", commitName),
-		)
-	}
+	env := buildEnv(os.Environ(), profile, expandedKey)
 
 	// Find git executable
 	gitPath, err := exec.LookPath("git")
@@ -97,4 +86,32 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil // unreachable
+}
+
+// buildEnv returns the env slice for the exec'd git, with profile overrides
+// applied. Any colliding key in the parent env is removed before the override
+// is appended, because syscall.Exec on macOS keeps the *first* occurrence of a
+// duplicated key — appending alone silently loses the override.
+func buildEnv(parentEnv []string, profile *identity.Profile, expandedKey string) []string {
+	overrides := map[string]string{
+		"GIT_SSH_COMMAND":     fmt.Sprintf("ssh -i %s -o IdentitiesOnly=yes", expandedKey),
+		"GIT_AUTHOR_EMAIL":    profile.Email,
+		"GIT_COMMITTER_EMAIL": profile.Email,
+	}
+	if commitName := profile.CommitName(); commitName != "" {
+		overrides["GIT_AUTHOR_NAME"] = commitName
+		overrides["GIT_COMMITTER_NAME"] = commitName
+	}
+
+	env := make([]string, 0, len(parentEnv)+len(overrides))
+	for _, kv := range parentEnv {
+		name, _, _ := strings.Cut(kv, "=")
+		if _, replaced := overrides[name]; !replaced {
+			env = append(env, kv)
+		}
+	}
+	for k, v := range overrides {
+		env = append(env, k+"="+v)
+	}
+	return env
 }
