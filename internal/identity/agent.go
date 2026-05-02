@@ -288,7 +288,7 @@ func agentDir() (string, error) {
 	// Fallback: a per-user dir directly under /tmp keeps the path short on
 	// systems with deep HOME or $TMPDIR (notably macOS, where $TMPDIR can be
 	// >50 chars on its own).
-	fallback := filepath.Join("/", "tmp", fmt.Sprintf("gtb-%d", os.Getuid()))
+	fallback := fmt.Sprintf("/tmp/gtb-%d", os.Getuid())
 	if err := os.MkdirAll(fallback, 0o700); err != nil {
 		return "", err
 	}

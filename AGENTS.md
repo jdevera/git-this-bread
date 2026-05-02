@@ -10,6 +10,18 @@ mise run test     # unit tests
 mise run lint     # golangci-lint
 ```
 
+## Pre-commit hooks
+
+Install once per clone (requires the [pre-commit](https://pre-commit.com/) framework):
+
+```
+pre-commit install
+```
+
+Runs `golangci-lint` (pinned to the same version as CI) and `go test` before
+each commit. Skipping with `--no-verify` is discouraged — fix the underlying
+issue rather than bypassing.
+
 ## Packages
 
 - git-explain — repo status analyzer (see cmd/git-explain/AGENTS.md)
