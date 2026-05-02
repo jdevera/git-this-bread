@@ -350,6 +350,64 @@ func TestDisplayName(t *testing.T) {
 	})
 }
 
+func TestUseCustomAgentDefaultsTrue(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, ".gitconfig")
+	require.NoError(t, os.WriteFile(configFile, []byte(""), 0o600))
+	setEnv(t, "HOME", tmpDir)
+
+	t.Run("absent key reads as true", func(t *testing.T) {
+		p := &Profile{Name: "agentdefault", Email: "a@b", UseCustomAgent: true}
+		_, err := Set(p, SetOptions{Detached: true})
+		require.NoError(t, err)
+		got, err := Get("agentdefault")
+		require.NoError(t, err)
+		assert.True(t, got.UseCustomAgent)
+
+		// And the absent-key invariant: nothing was written for the default case.
+		val, err := getConfigValue("agentdefault", "usecustomagent")
+		assert.Error(t, err, "expected the key to be absent for the default-true case")
+		assert.Empty(t, val)
+	})
+
+	t.Run("explicit false persists and reads back", func(t *testing.T) {
+		p := &Profile{Name: "agentoff", Email: "a@b", UseCustomAgent: false}
+		_, err := Set(p, SetOptions{Detached: true})
+		require.NoError(t, err)
+		got, err := Get("agentoff")
+		require.NoError(t, err)
+		assert.False(t, got.UseCustomAgent)
+	})
+
+	t.Run("flipping back to true unsets the key", func(t *testing.T) {
+		p := &Profile{Name: "agentflip", Email: "a@b", UseCustomAgent: false}
+		_, err := Set(p, SetOptions{Detached: true})
+		require.NoError(t, err)
+
+		p.UseCustomAgent = true
+		_, err = Set(p, SetOptions{Detached: true})
+		require.NoError(t, err)
+
+		got, err := Get("agentflip")
+		require.NoError(t, err)
+		assert.True(t, got.UseCustomAgent)
+		_, err = getConfigValue("agentflip", "usecustomagent")
+		assert.Error(t, err, "key should be unset when profile flips back to default")
+	})
+
+	t.Run("SetField toggles via CLI key", func(t *testing.T) {
+		p := &Profile{Name: "agentset", Email: "a@b"}
+		_, err := Set(p, SetOptions{Detached: true})
+		require.NoError(t, err)
+
+		_, err = SetField("agentset", "usecustomagent", "false", SetOptions{Detached: true})
+		require.NoError(t, err)
+		got, err := Get("agentset")
+		require.NoError(t, err)
+		assert.False(t, got.UseCustomAgent)
+	})
+}
+
 func TestIncludedConfigFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	setEnv(t, "HOME", tmpDir)

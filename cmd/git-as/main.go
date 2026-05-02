@@ -69,7 +69,20 @@ func run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	env := buildEnv(os.Environ(), profile, expandedKey)
+	// Resolve the agent socket path: empty means "use whatever the user has
+	// configured outside git-this-bread" (no IdentityAgent override). Non-empty
+	// means git-as will route ssh through a per-profile sub-agent that holds
+	// only the profile's key.
+	var agentSocket string
+	if profile.UseCustomAgent {
+		sa, err := identity.Ensure(profile)
+		if err != nil {
+			return fmt.Errorf("preparing sub-agent for profile %q: %w", profileName, err)
+		}
+		agentSocket = sa.Socket
+	}
+
+	env := buildEnv(os.Environ(), profile, expandedKey, agentSocket)
 
 	// Find git executable
 	gitPath, err := exec.LookPath("git")
@@ -92,9 +105,12 @@ func run(cmd *cobra.Command, args []string) error {
 // applied. Any colliding key in the parent env is removed before the override
 // is appended, because syscall.Exec on macOS keeps the *first* occurrence of a
 // duplicated key — appending alone silently loses the override.
-func buildEnv(parentEnv []string, profile *identity.Profile, expandedKey string) []string {
+//
+// agentSocket, if non-empty, is added as `IdentityAgent=<path>` so ssh routes
+// through the per-profile sub-agent and ignores SSH_AUTH_SOCK.
+func buildEnv(parentEnv []string, profile *identity.Profile, expandedKey, agentSocket string) []string {
 	overrides := map[string]string{
-		"GIT_SSH_COMMAND":     fmt.Sprintf("ssh -i %s -o IdentitiesOnly=yes", expandedKey),
+		"GIT_SSH_COMMAND":     sshCommand(expandedKey, agentSocket),
 		"GIT_AUTHOR_EMAIL":    profile.Email,
 		"GIT_COMMITTER_EMAIL": profile.Email,
 	}
@@ -114,4 +130,15 @@ func buildEnv(parentEnv []string, profile *identity.Profile, expandedKey string)
 		env = append(env, k+"="+v)
 	}
 	return env
+}
+
+// sshCommand builds the GIT_SSH_COMMAND value. With a sub-agent socket,
+// IdentityAgent overrides the ambient SSH_AUTH_SOCK so only the profile's key
+// is offered. Without one, ssh falls back to the user's ambient agent (or
+// no agent), with IdentitiesOnly still pinning to the -i key.
+func sshCommand(expandedKey, agentSocket string) string {
+	if agentSocket != "" {
+		return fmt.Sprintf("ssh -i %s -o IdentitiesOnly=yes -o IdentityAgent=%s", expandedKey, agentSocket)
+	}
+	return fmt.Sprintf("ssh -i %s -o IdentitiesOnly=yes", expandedKey)
 }

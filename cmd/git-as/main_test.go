@@ -46,7 +46,7 @@ func TestBuildEnvOverridesParent(t *testing.T) {
 		DisplayName: "Real Name",
 	}
 
-	env := buildEnv(parent, profile, "/tmp/k")
+	env := buildEnv(parent, profile, "/tmp/k", "")
 
 	for _, key := range []string{
 		"GIT_SSH_COMMAND",
@@ -71,7 +71,23 @@ func TestBuildEnvCommitNameOmittedWhenUnset(t *testing.T) {
 		SSHKey: "/tmp/k",
 		Email:  "real@profile",
 	}
-	env := buildEnv(nil, profile, "/tmp/k")
+	env := buildEnv(nil, profile, "/tmp/k", "")
 	assert.Equal(t, 0, envCount(env, "GIT_AUTHOR_NAME"))
 	assert.Equal(t, 0, envCount(env, "GIT_COMMITTER_NAME"))
+}
+
+func TestBuildEnvIncludesIdentityAgentWhenSocketGiven(t *testing.T) {
+	profile := &identity.Profile{Name: "test", SSHKey: "/tmp/k", Email: "x@y"}
+	env := buildEnv(nil, profile, "/tmp/k", "/tmp/agents/test.sock")
+	cmd := envLookup(env, "GIT_SSH_COMMAND")
+	assert.Contains(t, cmd, "IdentitiesOnly=yes")
+	assert.Contains(t, cmd, "IdentityAgent=/tmp/agents/test.sock")
+}
+
+func TestBuildEnvOmitsIdentityAgentWhenSocketEmpty(t *testing.T) {
+	profile := &identity.Profile{Name: "test", SSHKey: "/tmp/k", Email: "x@y"}
+	env := buildEnv(nil, profile, "/tmp/k", "")
+	cmd := envLookup(env, "GIT_SSH_COMMAND")
+	assert.Contains(t, cmd, "IdentitiesOnly=yes")
+	assert.NotContains(t, cmd, "IdentityAgent=")
 }

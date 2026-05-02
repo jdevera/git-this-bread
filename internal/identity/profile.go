@@ -12,16 +12,17 @@ import (
 
 // Profile represents a git/GitHub identity profile.
 type Profile struct {
-	Name        string // Profile name (e.g., "personal", "work")
-	DisplayName string // Display name for git commits (optional, overrides User)
-	SSHKey      string // Path to SSH private key (required for git-as)
-	Email       string // Git author/committer email (required for git-as)
-	User        string // Git author/committer name (optional)
-	GHUser      string // GitHub username for gh-as (optional)
+	Name           string // Profile name (e.g., "personal", "work")
+	DisplayName    string // Display name for git commits (optional, overrides User)
+	SSHKey         string // Path to SSH private key (required for git-as)
+	Email          string // Git author/committer email (required for git-as)
+	User           string // Git author/committer name (optional)
+	GHUser         string // GitHub username for gh-as (optional)
+	UseCustomAgent bool   // Default true; false opts out of git-as's per-profile sub-agent
 }
 
 // profileKeys are the git config keys used for profile fields.
-var profileKeys = []string{"name", "sshkey", "email", "user", "ghuser"}
+var profileKeys = []string{"name", "sshkey", "email", "user", "ghuser", "usecustomagent"}
 
 // CommitName returns the name to use for git commits.
 // Prefers DisplayName, falls back to User.
@@ -73,7 +74,9 @@ func List() ([]string, error) {
 
 // Get reads a profile from git config.
 func Get(name string) (*Profile, error) {
-	p := &Profile{Name: name}
+	// UseCustomAgent defaults to true (the sub-agent is on unless opted out).
+	// Initialize before reading config so an absent key keeps the default.
+	p := &Profile{Name: name, UseCustomAgent: true}
 
 	// Read each field
 	if val, err := getConfigValue(name, "name"); err == nil {
@@ -91,13 +94,29 @@ func Get(name string) (*Profile, error) {
 	if val, err := getConfigValue(name, "ghuser"); err == nil {
 		p.GHUser = val
 	}
+	useCustomAgentSet := false
+	if val, err := getConfigValue(name, "usecustomagent"); err == nil {
+		p.UseCustomAgent = parseBool(val)
+		useCustomAgentSet = true
+	}
 
-	// Check if profile exists (has at least one field)
-	if p.DisplayName == "" && p.SSHKey == "" && p.Email == "" && p.User == "" && p.GHUser == "" {
+	// Check if profile exists (has at least one field). UseCustomAgent's
+	// default-true value doesn't count as "exists" — only an explicit set does.
+	if p.DisplayName == "" && p.SSHKey == "" && p.Email == "" && p.User == "" && p.GHUser == "" && !useCustomAgentSet {
 		return nil, fmt.Errorf("profile %q not found", name)
 	}
 
 	return p, nil
+}
+
+// parseBool mirrors git's notion of boolean config values.
+func parseBool(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "true", "yes", "on", "1":
+		return true
+	default:
+		return false
+	}
 }
 
 // getConfigValue reads a single config value.
@@ -225,6 +244,17 @@ func Set(p *Profile, opts SetOptions) (string, error) {
 			return targetFile, err
 		}
 	}
+	// Only persist usecustomagent when explicitly disabled; the default-true
+	// case is the absence of the key.
+	if !p.UseCustomAgent {
+		if err := setConfigValue(targetFile, p.Name, "usecustomagent", "false"); err != nil {
+			return targetFile, err
+		}
+	} else {
+		// If the key already exists from a prior false-write, drop it so the
+		// absence-means-true invariant holds. Ignore "key not found" errors.
+		_ = unsetConfigValue(targetFile, p.Name, "usecustomagent")
+	}
 
 	// Verify write succeeded by reading back from the specific file
 	if err := verifyWrite(targetFile, p); err != nil {
@@ -249,6 +279,21 @@ func setConfigValue(file, profile, key, value string) error {
 		return fmt.Errorf("failed to set %s: %w", configKey, err)
 	}
 	return nil
+}
+
+// unsetConfigValue removes a single config value from a specific file. Exit
+// code 5 from `git config --unset` means "no such key", which is fine here.
+func unsetConfigValue(file, profile, key string) error {
+	configKey := fmt.Sprintf("identity.%s.%s", profile, key)
+	cmd := exec.Command("git", "config", "--file", file, "--unset", configKey)
+	err := cmd.Run()
+	if err == nil {
+		return nil
+	}
+	if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 5 {
+		return nil
+	}
+	return fmt.Errorf("failed to unset %s: %w", configKey, err)
 }
 
 // verifyWrite checks that the values were written to the target file.
@@ -281,7 +326,13 @@ func verifyWrite(file string, p *Profile) error {
 	if err := check("user", p.User); err != nil {
 		return err
 	}
-	return check("ghuser", p.GHUser)
+	if err := check("ghuser", p.GHUser); err != nil {
+		return err
+	}
+	if !p.UseCustomAgent {
+		return check("usecustomagent", "false")
+	}
+	return nil
 }
 
 // verifyEffective checks that git's merged config returns our values.
@@ -309,7 +360,23 @@ func verifyEffective(p *Profile) error {
 	if err := check("user", p.User); err != nil {
 		return err
 	}
-	return check("ghuser", p.GHUser)
+	if err := check("ghuser", p.GHUser); err != nil {
+		return err
+	}
+	// UseCustomAgent: an absent key is the same as true, so only fail when the
+	// merged config disagrees with the profile's intent.
+	val, err := getConfigValue(p.Name, "usecustomagent")
+	if err != nil {
+		// Key absent → default true. Disagrees only if profile says false.
+		if !p.UseCustomAgent {
+			return fmt.Errorf("write succeeded, but identity.%s.usecustomagent is absent (effective: true)", p.Name)
+		}
+		return nil
+	}
+	if parseBool(val) != p.UseCustomAgent {
+		return fmt.Errorf("write succeeded, but another config file is overriding identity.%s.usecustomagent", p.Name)
+	}
+	return nil
 }
 
 // Remove deletes a profile from its source file.
@@ -353,9 +420,9 @@ func DefaultConfigFile() string {
 // SetField sets a single field on an existing profile.
 func SetField(name, key, value string, opts SetOptions) (string, error) {
 	// Validate key
-	validKeys := map[string]bool{"name": true, "sshkey": true, "email": true, "user": true, "ghuser": true}
+	validKeys := map[string]bool{"name": true, "sshkey": true, "email": true, "user": true, "ghuser": true, "usecustomagent": true}
 	if !validKeys[key] {
-		return "", fmt.Errorf("invalid key %q, must be one of: sshkey, email, user, ghuser", key)
+		return "", fmt.Errorf("invalid key %q, must be one of: name, sshkey, email, user, ghuser, usecustomagent", key)
 	}
 
 	// Determine target file

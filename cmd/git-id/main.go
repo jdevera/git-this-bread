@@ -147,6 +147,12 @@ var showCmd = &cobra.Command{
 			fmt.Println("  ghuser: (not set)")
 		}
 
+		// Only print useCustomAgent when explicitly disabled — the default-true
+		// case isn't worth the line.
+		if !profile.UseCustomAgent {
+			fmt.Println("  usecustomagent: false ⚠ profile opts out of git-as's per-profile sub-agent")
+		}
+
 		return nil
 	},
 }
@@ -303,6 +309,117 @@ Examples:
 	},
 }
 
+var agentAllFlag bool
+
+var agentCmd = &cobra.Command{
+	Use:   "agent",
+	Short: "Manage per-profile ssh sub-agents",
+	Long: `Inspect and control the per-profile ssh sub-agents that git-as uses
+to isolate identities. By default git-as spawns one sub-agent per profile,
+loaded with that profile's key only; setting 'usecustomagent = false' on
+a profile disables the feature for it.`,
+}
+
+var agentListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List sub-agents currently tracked under the cache dir",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		agents, err := identity.ListAgents()
+		if err != nil {
+			return err
+		}
+		if len(agents) == 0 {
+			fmt.Println("No sub-agents found.")
+			return nil
+		}
+		for _, a := range agents {
+			alive := "dead"
+			keyCount := "?"
+			if a.IsAlive() {
+				alive = "alive"
+				if keys, err := a.LoadedKeys(); err == nil {
+					keyCount = fmt.Sprintf("%d", len(keys))
+				}
+			}
+			pid := a.PID()
+			fmt.Printf("  %s\t%s\tpid=%d\tkeys=%s\tsocket=%s\n",
+				a.Profile.Name, alive, pid, keyCount, a.Socket)
+		}
+		return nil
+	},
+}
+
+var agentKillCmd = &cobra.Command{
+	Use:   "kill [<profile>]",
+	Short: "Terminate a profile's sub-agent (or all with --all)",
+	Args:  cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if agentAllFlag {
+			if len(args) > 0 {
+				return fmt.Errorf("--all is incompatible with a profile argument")
+			}
+			agents, err := identity.ListAgents()
+			if err != nil {
+				return err
+			}
+			for _, a := range agents {
+				if err := a.Kill(); err != nil {
+					fmt.Fprintf(os.Stderr, "kill %s: %v\n", a.Profile.Name, err)
+					continue
+				}
+				fmt.Printf("killed %s\n", a.Profile.Name)
+			}
+			return nil
+		}
+		if len(args) != 1 {
+			return fmt.Errorf("provide a profile name or use --all")
+		}
+		profileName := args[0]
+		// Don't go through Ensure here — that would spawn a fresh agent for a
+		// profile we're trying to kill. Walk the cache dir directly.
+		agents, err := identity.ListAgents()
+		if err != nil {
+			return err
+		}
+		for _, a := range agents {
+			if a.Profile.Name == profileName {
+				if err := a.Kill(); err != nil {
+					return err
+				}
+				fmt.Printf("killed %s\n", profileName)
+				return nil
+			}
+		}
+		fmt.Printf("no sub-agent found for %s\n", profileName)
+		return nil
+	},
+}
+
+var agentReloadCmd = &cobra.Command{
+	Use:   "reload <profile>",
+	Short: "Reload the profile's key into its sub-agent",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		profile, err := identity.Get(args[0])
+		if err != nil {
+			return err
+		}
+		if !profile.UseCustomAgent {
+			return fmt.Errorf("profile %q has usecustomagent=false; nothing to reload", profile.Name)
+		}
+		sa, err := identity.Ensure(profile)
+		if err != nil {
+			return err
+		}
+		if err := sa.LoadKey(); err != nil {
+			return err
+		}
+		fmt.Printf("reloaded key for %s\n", profile.Name)
+		return nil
+	},
+}
+
 func init() {
 	// Add subcommands
 	rootCmd.AddCommand(listCmd)
@@ -310,6 +427,12 @@ func init() {
 	rootCmd.AddCommand(addCmd)
 	rootCmd.AddCommand(removeCmd)
 	rootCmd.AddCommand(setCmd)
+	rootCmd.AddCommand(agentCmd)
+
+	agentCmd.AddCommand(agentListCmd)
+	agentCmd.AddCommand(agentKillCmd)
+	agentCmd.AddCommand(agentReloadCmd)
+	agentKillCmd.Flags().BoolVar(&agentAllFlag, "all", false, "Kill all sub-agents")
 
 	// Global flags for write operations
 	for _, cmd := range []*cobra.Command{addCmd, setCmd} {
