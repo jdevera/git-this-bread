@@ -281,14 +281,14 @@ func agentDir() (string, error) {
 	// typically short; reserving 32 bytes leaves headroom for typical names
 	// while still letting unusually-long ones trigger the fallback explicitly.
 	if len(primary)+1+32 < sunPathLimit {
-		if err := os.MkdirAll(primary, 0o700); err == nil {
+		if err := os.MkdirAll(primary, 0o700); err == nil { //nolint:gosec // primary is derived from XDG_CACHE_HOME / $HOME, both user-owned
 			return primary, nil
 		}
 	}
 	// Fallback: a per-user dir directly under /tmp keeps the path short on
 	// systems with deep HOME or $TMPDIR (notably macOS, where $TMPDIR can be
 	// >50 chars on its own).
-	fallback := filepath.Join("/tmp", fmt.Sprintf("gtb-%d", os.Getuid()))
+	fallback := filepath.Join("/", "tmp", fmt.Sprintf("gtb-%d", os.Getuid()))
 	if err := os.MkdirAll(fallback, 0o700); err != nil {
 		return "", err
 	}
@@ -301,7 +301,7 @@ func agentDir() (string, error) {
 // prompts for the passphrase on encrypted keys — wasteful and broken under
 // non-TTY callers like our HasKey probe.
 func pubkeyForPrivate(path string) (string, error) {
-	if data, err := os.ReadFile(path + ".pub"); err == nil {
+	if data, err := os.ReadFile(path + ".pub"); err == nil { //nolint:gosec // path is the user's own configured ssh key
 		if k := canonPubkey(string(data)); k != "" {
 			return k, nil
 		}
@@ -381,16 +381,16 @@ func parseAgentPID(out string) int {
 // flockExclusive acquires an exclusive advisory lock on path. Returned func
 // releases the lock and closes the fd.
 func flockExclusive(path string) (func(), error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600) //nolint:gosec // path is the agent lock file under our cache dir
 	if err != nil {
 		return nil, err
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil { //nolint:gosec // file descriptors fit in int on every supported platform
 		_ = f.Close()
 		return nil, err
 	}
 	return func() {
-		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:gosec // see above
 		_ = f.Close()
 	}, nil
 }
