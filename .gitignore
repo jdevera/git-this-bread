@@ -27,3 +27,6 @@ go.work
 .DS_Store
 .env
 /gh-wtfork
+
+# Local-only working notes (bug analyses, design drafts, scratch). See AGENTS.md.
+/.local-docs/

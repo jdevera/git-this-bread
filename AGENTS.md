@@ -37,3 +37,11 @@ brew install jdevera/tap/git-this-bread
 ## Test Helpers
 
 `testutil.NewTestRepo(t)` creates temp git repos for tests.
+
+## Transient docs
+
+`/.local-docs/` is gitignored and is the home for working notes that should
+not be committed: bug investigations, design drafts, scratch analyses,
+anything written for the moment rather than for the repo. Put files there by
+default; only promote to `docs/` (or a per-tool README) when the content is
+intended to ship to other readers.

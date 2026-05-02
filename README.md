@@ -149,81 +149,33 @@ git explain ~/projects --llm-advice --llm-instructions "be encouraging and use b
 
 ## 🥯 git-id
 
-**Manage git identity profiles for multi-account workflows.**
-
-Juggling personal and work GitHub accounts? `git-id` stores identity profiles in your git config so you can switch contexts without kneading through config files.
-
-### What it stores
-
-Each profile can have:
-- 🔑 **SSH key** — path to the private key for this identity
-- 📧 **Email** — git author/committer email
-- 👤 **User** — git author/committer name
-- 🐙 **GitHub user** — username for `gh-as`
-
-### Usage
+**Manage git identity profiles for multi-account workflows.** Stores `[identity "<name>"]` sections in your git config so `git-as` and `gh-as` can switch contexts without manual env juggling.
 
 ```bash
-# List all profiles
-git-id
-
-# Create a new profile interactively
-git-id add personal
-
-# Show profile details
-git-id show personal
-
-# Set a single field
+git-id                  # list profiles
+git-id add personal     # create one interactively
+git-id show personal    # inspect
 git-id set personal email me@example.com
-
-# Remove a profile
-git-id remove personal
+git-id agent list       # running sub-agents (used by git-as)
 ```
 
-### Example output
-
-```
-$ git-id
-  personal: me@example.com (gh: myuser ✓)
-  work: me@company.com (gh: work-user ✓)
-
-$ git-id show personal
-Profile: personal
-Source:  /Users/me/.gitconfig
-
-  sshkey: ~/.ssh/id_personal ✓
-  email:  me@example.com
-  user:   My Name
-  ghuser: myuser ✓ authenticated
-```
+→ Full reference: [docs/git-id.md](docs/git-id.md)
 
 ---
 
 ## 🥨 git-as
 
-**Run git commands with a specific identity.**
-
-Use your identity profiles to run git commands with the right SSH key and email — no more pushing with the wrong account.
-
-### Usage
+**Run git commands with a specific identity.** Picks the profile's SSH key and authorship, isolates the SSH agent so the wrong key can't get offered first, then execs `git`.
 
 ```bash
-# Clone with your personal identity
 git-as personal clone git@github.com:user/repo.git
-
-# Push with your work identity
 git-as work push origin main
-
-# Commit as a specific identity
 git-as personal commit -m "Fix bug"
 ```
 
-### How it works
+By default, `git-as` spawns a per-profile `ssh-agent` loaded with only that profile's key — your system agent is untouched, plain `git` keeps working as before, and the encrypted-key passphrase is entered once (cached in macOS Keychain, or via `SSH_ASKPASS` on Linux).
 
-`git-as` sets environment variables and execs git:
-- `GIT_SSH_COMMAND` — uses the profile's SSH key
-- `GIT_AUTHOR_EMAIL` / `GIT_COMMITTER_EMAIL` — uses the profile's email
-- `GIT_AUTHOR_NAME` / `GIT_COMMITTER_NAME` — uses the profile's name (if set)
+→ Full reference, mental model, troubleshooting: [docs/git-as.md](docs/git-as.md)
 
 ---
 
@@ -231,7 +183,7 @@ git-as personal commit -m "Fix bug"
 
 **Run GitHub CLI commands with a specific identity.**
 
-Switch between authenticated GitHub accounts for `gh` commands.
+Switch between authenticated GitHub accounts for `gh` commands. Reads profiles managed by [`git-id`](docs/git-id.md).
 
 ### Requirements
 
